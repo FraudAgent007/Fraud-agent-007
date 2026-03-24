@@ -314,8 +314,8 @@
   "pattern:generic": {
     "key": "pattern:generic",
     "firstSeen": 1774387784546,
-    "lastSeen": 1774387793481,
-    "timesSeen": 3,
+    "lastSeen": 1774393226508,
+    "timesSeen": 4,
     "tokenSymbol": null,
     "tokenAddress": null,
     "pattern": "generic",
@@ -338,6 +338,12 @@
       },
       {
         "time": 1774387793481,
+        "riskScore": 0,
+        "riskLevel": "low",
+        "primaryRisk": "unverified_structure"
+      },
+      {
+        "time": 1774393226508,
         "riskScore": 0,
         "riskLevel": "low",
         "primaryRisk": "unverified_structure"

@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const fs = require("fs");
+const http = require("http");
 const { TwitterApi } = require("twitter-api-v2");
 
 const { classifyMention } = require("./classifier");
@@ -8,18 +9,49 @@ const { shouldReply, normalizeText } = require("./policy");
 const { analyzeRisk } = require("./riskEngine");
 const { updatePatternMemory, getPatternInsight } = require("./patternMemory");
 const { updateSignalMemory } = require("./signalEngine");
-const { loadCases, saveCases, updateCaseMemory, summarizeCase } = require("./caseMemory");
-const { loadRepliedData, saveRepliedData, loadState, saveState } = require("./memory");
-const { getDexContextFromText, summarizeOnchain, dexChainToRpcKey } = require("./onchain");
+const {
+  loadCases,
+  saveCases,
+  updateCaseMemory,
+  summarizeCase
+} = require("./caseMemory");
+const {
+  loadRepliedData,
+  saveRepliedData,
+  loadState,
+  saveState
+} = require("./memory");
+const {
+  getDexContextFromText,
+  summarizeOnchain,
+  dexChainToRpcKey
+} = require("./onchain");
 const { RpcPool } = require("./rpcClient");
 const { inspectContract } = require("./contractLayer");
-const { getTopHolders, analyzeHolderRisk } = require("./holderLayer");
+const { getTopHolders } = require("./holderProvider");
+const { analyzeHolderRisk } = require("./holderLayer");
 const { buildReasoningBrain } = require("./reasoningBrain");
 const { generateReply } = require("./responder");
 const { shouldPostThreatBrief } = require("./threatEngine");
 const { generateThreatBrief } = require("./threatPoster");
 
+const PORT = Number(process.env.PORT || 3000);
 const LOCK_FILE = "bot.lock";
+
+http
+  .createServer((req, res) => {
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("ok");
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Fraud Agent 007 is running");
+  })
+  .listen(PORT, () => {
+    console.log(`Health server listening on ${PORT}`);
+  });
 
 if (fs.existsSync(LOCK_FILE)) {
   try {
@@ -70,7 +102,12 @@ let isThreatPosting = false;
 function buildRpcPoolForChain(chainId) {
   const key = dexChainToRpcKey(chainId);
   if (!key) return null;
-  const urls = (process.env[key] || "").split(",").map((x) => x.trim()).filter(Boolean);
+
+  const urls = (process.env[key] || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
   if (!urls.length) return null;
   return new RpcPool(urls);
 }
@@ -168,23 +205,41 @@ async function processMentions() {
         try {
           const rawHolders = await getTopHolders({
             chainId: onchain.chainId,
-            tokenAddress: onchain.tokenAddress
+            tokenAddress: onchain.tokenAddress,
+            limit: 20
           });
 
-          holderCtx = rawHolders.found
-            ? analyzeHolderRisk({
-                holders: rawHolders.holders || [],
-                totalSupply: contractCtx.totalSupply || null
-              })
-            : rawHolders;
+          if (rawHolders.found) {
+            holderCtx = analyzeHolderRisk({
+              holders: rawHolders.holders || [],
+              totalSupply: contractCtx.totalSupply || null
+            });
+
+            holderCtx.source = rawHolders.source || null;
+            holderCtx.providerReason = rawHolders.reason || null;
+          } else {
+            holderCtx = {
+              found: false,
+              flags: [],
+              nextChecks: [],
+              reason: rawHolders.reason || "holder_provider_unavailable",
+              source: rawHolders.source || null
+            };
+          }
         } catch (err) {
           console.error("Holder error:", err.message || err);
+          holderCtx = {
+            found: false,
+            flags: [],
+            nextChecks: [],
+            reason: err.message || "holder_fetch_exception"
+          };
         }
       }
 
       console.log("On-chain:", onchain);
       console.log("Contract:", contractCtx);
-      console.log("Holders:", holderCtx);
+      console.log("Holders:", JSON.stringify(holderCtx, null, 2));
 
       const primaryRisk =
         contractCtx.primaryRisk ||

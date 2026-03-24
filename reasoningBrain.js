@@ -2,7 +2,14 @@ function unique(arr) {
   return [...new Set((arr || []).filter(Boolean))];
 }
 
-function summarizeEvidence({ classification, risk, onchain, contractCtx, holderCtx, caseSummary }) {
+function summarizeEvidence({
+  classification,
+  risk,
+  onchain,
+  contractCtx,
+  holderCtx,
+  caseSummary
+}) {
   const facts = [];
   const gaps = [];
   const concerns = [];
@@ -15,11 +22,22 @@ function summarizeEvidence({ classification, risk, onchain, contractCtx, holderC
     facts.push(`risk:${risk.riskLevel}`);
   }
 
+  if (typeof risk?.score === "number") {
+    facts.push(`risk_score:${risk.score}`);
+  }
+
   if (onchain?.found) {
     facts.push(`resolved:${onchain.tokenSymbol || onchain.tokenAddress || "token"}`);
+
     if (onchain.chainId) facts.push(`chain:${onchain.chainId}`);
+    if (onchain.dexId) facts.push(`dex:${onchain.dexId}`);
+
     if (Number(onchain.liquidityUsd || 0) > 0) {
-      facts.push(`liquidity:${Math.round(Number(onchain.liquidityUsd))}`);
+      facts.push(`liquidity_usd:${Math.round(Number(onchain.liquidityUsd))}`);
+    }
+
+    if (Number(onchain.volume24h || 0) > 0) {
+      facts.push(`volume24h:${Math.round(Number(onchain.volume24h))}`);
     }
   } else {
     gaps.push("token_not_resolved");
@@ -45,8 +63,22 @@ function summarizeEvidence({ classification, risk, onchain, contractCtx, holderC
     gaps.push("holder_distribution_missing");
   }
 
+  if (holderCtx?.found) {
+    if (typeof holderCtx.top1Pct === "number") facts.push(`top1_pct:${holderCtx.top1Pct}`);
+    if (typeof holderCtx.top5Pct === "number") facts.push(`top5_pct:${holderCtx.top5Pct}`);
+    if (typeof holderCtx.top10Pct === "number") facts.push(`top10_pct:${holderCtx.top10Pct}`);
+    if (typeof holderCtx.hhi === "number") facts.push(`hhi:${holderCtx.hhi}`);
+    if (typeof holderCtx.holdersConsidered === "number") {
+      facts.push(`holders_considered:${holderCtx.holdersConsidered}`);
+    }
+  }
+
   if ((caseSummary?.timesSeen || 0) >= 2) {
     facts.push(`seen:${caseSummary.timesSeen}`);
+  }
+
+  if (typeof caseSummary?.avgRiskScore === "number") {
+    facts.push(`avg_case_risk:${Number(caseSummary.avgRiskScore.toFixed(1))}`);
   }
 
   return {
@@ -56,12 +88,21 @@ function summarizeEvidence({ classification, risk, onchain, contractCtx, holderC
   };
 }
 
-function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx, caseSummary }) {
+function scoreReasoning({
+  classification,
+  risk,
+  onchain,
+  contractCtx,
+  holderCtx,
+  caseSummary
+}) {
   let score = 0;
   const reasons = [];
   let posture = "neutral";
 
   const label = classification?.label || "ignore";
+  const contractFlags = contractCtx?.flags || [];
+  const holderFlags = holderCtx?.flags || [];
 
   if (label === "scam_alert") {
     score += 40;
@@ -70,7 +111,7 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
   }
 
   if (label === "project_dd") {
-    score += 25;
+    score += 30;
     reasons.push("explicit due diligence request");
   }
 
@@ -85,7 +126,7 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
   }
 
   if (label === "security_education") {
-    score += 18;
+    score += 20;
     posture = "educational";
     reasons.push("security education request");
   }
@@ -111,8 +152,21 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
     reasons.push("resolution still weak");
   }
 
-  const contractFlags = contractCtx?.flags || [];
-  const holderFlags = holderCtx?.flags || [];
+  if (Number(onchain?.liquidityUsd || 0) > 0 && Number(onchain.liquidityUsd) < 10000) {
+    score += 10;
+    reasons.push("thin liquidity");
+  }
+
+  if (Number(onchain?.liquidityUsd || 0) > 0 && Number(onchain.liquidityUsd) < 2500) {
+    score += 8;
+    posture = "warning";
+    reasons.push("very low liquidity");
+  }
+
+  if (Number(onchain?.volume24h || 0) > 0 && Number(onchain.volume24h) < 1000) {
+    score += 6;
+    reasons.push("weak volume");
+  }
 
   if (contractFlags.includes("proxy_contract")) {
     score += 18;
@@ -125,8 +179,13 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
     reasons.push("proxy admin present");
   }
 
+  if (contractFlags.includes("owner_present")) {
+    score += 8;
+    reasons.push("owner authority present");
+  }
+
   if (contractFlags.includes("mint_function_detected")) {
-    score += 16;
+    score += 18;
     reasons.push("mint capability");
   }
 
@@ -147,20 +206,53 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
     reasons.push("pause capability");
   }
 
+  if (holderFlags.includes("single_holder_heavy")) {
+    score += 12;
+    reasons.push("single wallet concentration");
+  }
+
   if (holderFlags.includes("top5_dominance")) {
-    score += 18;
+    score += 20;
+    posture = "warning";
     reasons.push("top 5 concentration");
   }
 
   if (holderFlags.includes("extreme_top10_concentration")) {
-    score += 24;
+    score += 26;
     posture = "warning";
     reasons.push("extreme holder concentration");
+  }
+
+  if (holderFlags.includes("low_float_risk")) {
+    score += 18;
+    posture = "warning";
+    reasons.push("effective float may be too small");
+  }
+
+  if (holderFlags.includes("holder_cluster_risk")) {
+    score += 10;
+    reasons.push("holder distribution may be coordinated");
+  }
+
+  if (typeof holderCtx?.riskScore === "number") {
+    if (holderCtx.riskScore >= 55) {
+      score += 12;
+      posture = "warning";
+      reasons.push("high holder risk score");
+    } else if (holderCtx.riskScore >= 28) {
+      score += 6;
+      reasons.push("moderate holder risk score");
+    }
   }
 
   if ((caseSummary?.timesSeen || 0) >= 2) {
     score += 8;
     reasons.push("repeat mentions");
+  }
+
+  if ((caseSummary?.timesSeen || 0) >= 5) {
+    score += 6;
+    reasons.push("persistent entity recurrence");
   }
 
   if ((caseSummary?.avgRiskScore || 0) >= 40) {
@@ -177,7 +269,7 @@ function scoreReasoning({ classification, risk, onchain, contractCtx, holderCtx,
   };
 }
 
-function chooseAction({ policyDecision, reasoning, evidence }) {
+function chooseAction({ policyDecision, reasoning, evidence, classification }) {
   if (!policyDecision?.allow) {
     return {
       action: "ignore",
@@ -189,8 +281,9 @@ function chooseAction({ policyDecision, reasoning, evidence }) {
   const score = reasoning?.score || 0;
   const posture = reasoning?.posture || "neutral";
   const gaps = evidence?.gaps || [];
+  const label = classification?.label || "ignore";
 
-  if (score >= 75) {
+  if (score >= 80) {
     return {
       action: "reply",
       strategy: "hard_warning",
@@ -198,27 +291,27 @@ function chooseAction({ policyDecision, reasoning, evidence }) {
     };
   }
 
-  if (score >= 50) {
-    if (gaps.includes("contract_not_verified") || gaps.includes("holder_distribution_missing")) {
-      return {
-        action: "reply",
-        strategy: "cautious_dd",
-        reason: "moderate_conviction_with_gaps"
-      };
-    }
-
+  if (score >= 55) {
     return {
       action: "reply",
       strategy: "cautious_dd",
-      reason: "moderate_conviction"
+      reason: gaps.length ? "moderate_conviction_with_gaps" : "moderate_conviction"
     };
   }
 
-  if (score >= 25) {
+  if (score >= 28) {
     return {
       action: "reply",
-      strategy: posture === "educational" ? "educational" : "light_response",
+      strategy: label === "security_education" ? "educational" : "light_response",
       reason: "light_but_actionable"
+    };
+  }
+
+  if (label === "scam_alert" && score >= 20) {
+    return {
+      action: "reply",
+      strategy: "light_response",
+      reason: "scam_signal_with_limited_evidence"
     };
   }
 
@@ -235,7 +328,8 @@ function buildReasoningBrain(input) {
   const plan = chooseAction({
     policyDecision: input.policyDecision,
     reasoning,
-    evidence
+    evidence,
+    classification: input.classification
   });
 
   return {
