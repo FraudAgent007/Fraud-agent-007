@@ -32,7 +32,7 @@ function updateCaseMemory(cases, input) {
 
   const now = Date.now();
 
-  const existing = cases[key] || {
+  const entry = cases[key] || {
     key,
     firstSeen: now,
     lastSeen: now,
@@ -40,38 +40,38 @@ function updateCaseMemory(cases, input) {
     tokenSymbol: input.tokenSymbol || null,
     tokenAddress: input.tokenAddress || null,
     pattern: input.pattern || null,
-    labels: {},
-    latestRiskLevel: null,
+    avgRiskScore: 0,
+    lastRiskScore: 0,
+    latestRiskLevel: "unknown",
     latestPrimaryRisk: null,
-    history: [],
+    history: []
   };
 
-  existing.lastSeen = now;
-  existing.timesSeen += 1;
+  entry.lastSeen = now;
+  entry.timesSeen += 1;
 
-  if (input.tokenSymbol) existing.tokenSymbol = input.tokenSymbol;
-  if (input.tokenAddress) existing.tokenAddress = input.tokenAddress;
-  if (input.pattern) existing.pattern = input.pattern;
+  if (input.tokenSymbol) entry.tokenSymbol = input.tokenSymbol;
+  if (input.tokenAddress) entry.tokenAddress = input.tokenAddress;
+  if (input.pattern) entry.pattern = input.pattern;
 
-  if (input.label) {
-    existing.labels[input.label] = (existing.labels[input.label] || 0) + 1;
-  }
+  entry.lastRiskScore = Number(input.riskScore || 0);
+  entry.latestRiskLevel = input.riskLevel || "unknown";
+  entry.latestPrimaryRisk = input.primaryRisk || null;
 
-  if (input.riskLevel) existing.latestRiskLevel = input.riskLevel;
-  if (input.primaryRisk) existing.latestPrimaryRisk = input.primaryRisk;
-
-  existing.history.push({
+  entry.history.push({
     time: now,
-    label: input.label || null,
-    riskLevel: input.riskLevel || null,
-    primaryRisk: input.primaryRisk || null,
-    source: input.source || "mention",
+    riskScore: entry.lastRiskScore,
+    riskLevel: entry.latestRiskLevel,
+    primaryRisk: entry.latestPrimaryRisk
   });
 
-  existing.history = existing.history.slice(-25);
+  entry.history = entry.history.slice(-25);
 
-  cases[key] = existing;
-  return existing;
+  const total = entry.history.reduce((sum, h) => sum + Number(h.riskScore || 0), 0);
+  entry.avgRiskScore = entry.history.length ? total / entry.history.length : 0;
+
+  cases[key] = entry;
+  return entry;
 }
 
 function summarizeCase(caseEntry) {
@@ -79,16 +79,18 @@ function summarizeCase(caseEntry) {
     return {
       seenBefore: false,
       timesSeen: 0,
-      latestRiskLevel: null,
-      latestPrimaryRisk: null,
+      avgRiskScore: 0,
+      latestRiskLevel: "unknown",
+      latestPrimaryRisk: null
     };
   }
 
   return {
     seenBefore: caseEntry.timesSeen > 1,
     timesSeen: caseEntry.timesSeen,
-    latestRiskLevel: caseEntry.latestRiskLevel || null,
-    latestPrimaryRisk: caseEntry.latestPrimaryRisk || null,
+    avgRiskScore: Number(caseEntry.avgRiskScore || 0),
+    latestRiskLevel: caseEntry.latestRiskLevel || "unknown",
+    latestPrimaryRisk: caseEntry.latestPrimaryRisk || null
   };
 }
 
@@ -96,5 +98,5 @@ module.exports = {
   loadCases,
   saveCases,
   updateCaseMemory,
-  summarizeCase,
+  summarizeCase
 };

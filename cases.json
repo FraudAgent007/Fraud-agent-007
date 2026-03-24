@@ -67,8 +67,8 @@
   "address:0x1223334444a7466fbf985b14e1f4edaf3883bca6": {
     "key": "address:0x1223334444a7466fbf985b14e1f4edaf3883bca6",
     "firstSeen": 1774355874721,
-    "lastSeen": 1774356225923,
-    "timesSeen": 5,
+    "lastSeen": 1774387793584,
+    "timesSeen": 6,
     "tokenSymbol": "GROW",
     "tokenAddress": "0x1223334444A7466fBf985B14E1F4EdAf3883bCa6",
     "pattern": "token_mention",
@@ -76,7 +76,7 @@
       "project_dd": 5
     },
     "latestRiskLevel": "low",
-    "latestPrimaryRisk": "mint_function_detected",
+    "latestPrimaryRisk": "insufficient hard evidence in text alone",
     "history": [
       {
         "time": 1774355874721,
@@ -112,14 +112,22 @@
         "riskLevel": "low",
         "primaryRisk": "mint_function_detected",
         "source": "mention"
+      },
+      {
+        "time": 1774387793584,
+        "riskScore": 10,
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone"
       }
-    ]
+    ],
+    "lastRiskScore": 10,
+    "avgRiskScore": 1.6666666666666667
   },
   "pattern:external_link": {
     "key": "pattern:external_link",
     "firstSeen": 1774355876859,
-    "lastSeen": 1774356227436,
-    "timesSeen": 5,
+    "lastSeen": 1774387780110,
+    "timesSeen": 6,
     "tokenSymbol": null,
     "tokenAddress": null,
     "pattern": "external_link",
@@ -127,7 +135,7 @@
       "scam_alert": 5
     },
     "latestRiskLevel": "medium",
-    "latestPrimaryRisk": "external link or wallet-connect risk",
+    "latestPrimaryRisk": "phishing or malicious link structure",
     "history": [
       {
         "time": 1774355876859,
@@ -163,8 +171,16 @@
         "riskLevel": "medium",
         "primaryRisk": "external link or wallet-connect risk",
         "source": "mention"
+      },
+      {
+        "time": 1774387780110,
+        "riskScore": 55,
+        "riskLevel": "medium",
+        "primaryRisk": "phishing or malicious link structure"
       }
-    ]
+    ],
+    "lastRiskScore": 55,
+    "avgRiskScore": 9.166666666666666
   },
   "pattern:urgency_link": {
     "key": "pattern:urgency_link",
@@ -265,6 +281,129 @@
         "riskLevel": "low",
         "primaryRisk": "insufficient hard evidence in text alone",
         "source": "mention"
+      }
+    ]
+  },
+  "address:ethqqsrvw47u2xhagdufjgcyws3rjknb773fbkxsavc6": {
+    "key": "address:ethqqsrvw47u2xhagdufjgcyws3rjknb773fbkxsavc6",
+    "firstSeen": 1774387782921,
+    "lastSeen": 1774387789048,
+    "timesSeen": 2,
+    "tokenSymbol": "ETH",
+    "tokenAddress": "ETHqqsRvW47U2XHAGDuFJGCYWS3rJknB773fBkxsaVc6",
+    "pattern": "token_mention",
+    "avgRiskScore": 7.5,
+    "lastRiskScore": 0,
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "unverified_structure",
+    "history": [
+      {
+        "time": 1774387782921,
+        "riskScore": 15,
+        "riskLevel": "low",
+        "primaryRisk": "external link or wallet-connect risk"
+      },
+      {
+        "time": 1774387789048,
+        "riskScore": 0,
+        "riskLevel": "low",
+        "primaryRisk": "unverified_structure"
+      }
+    ]
+  },
+  "pattern:generic": {
+    "key": "pattern:generic",
+    "firstSeen": 1774387784546,
+    "lastSeen": 1774387793481,
+    "timesSeen": 3,
+    "tokenSymbol": null,
+    "tokenAddress": null,
+    "pattern": "generic",
+    "avgRiskScore": 0,
+    "lastRiskScore": 0,
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "unverified_structure",
+    "history": [
+      {
+        "time": 1774387784546,
+        "riskScore": 0,
+        "riskLevel": "low",
+        "primaryRisk": "unverified_structure"
+      },
+      {
+        "time": 1774387791329,
+        "riskScore": 0,
+        "riskLevel": "low",
+        "primaryRisk": "unverified_structure"
+      },
+      {
+        "time": 1774387793481,
+        "riskScore": 0,
+        "riskLevel": "low",
+        "primaryRisk": "unverified_structure"
+      }
+    ]
+  },
+  "address:0xa4838122c683f732289805fc3c207febd55babdd": {
+    "key": "address:0xa4838122c683f732289805fc3c207febd55babdd",
+    "firstSeen": 1774387787590,
+    "lastSeen": 1774387787590,
+    "timesSeen": 1,
+    "tokenSymbol": "TRIAS",
+    "tokenAddress": "0xa4838122c683f732289805FC3C207Febd55BabDD",
+    "pattern": "token_mention",
+    "avgRiskScore": 10,
+    "lastRiskScore": 10,
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "insufficient hard evidence in text alone",
+    "history": [
+      {
+        "time": 1774387787590,
+        "riskScore": 10,
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone"
+      }
+    ]
+  },
+  "address:0x04cbd9cba03f1fbe845408e9e85ae20490586105": {
+    "key": "address:0x04cbd9cba03f1fbe845408e9e85ae20490586105",
+    "firstSeen": 1774387789244,
+    "lastSeen": 1774387789244,
+    "timesSeen": 1,
+    "tokenSymbol": "DEAI",
+    "tokenAddress": "0x04CBd9cBA03f1fbE845408e9e85aE20490586105",
+    "pattern": "token_mention",
+    "avgRiskScore": 10,
+    "lastRiskScore": 10,
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "insufficient hard evidence in text alone",
+    "history": [
+      {
+        "time": 1774387789244,
+        "riskScore": 10,
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone"
+      }
+    ]
+  },
+  "address:463sk47vkb7ue7xenthkivcmtxrsfne2x4q9wbyaurva": {
+    "key": "address:463sk47vkb7ue7xenthkivcmtxrsfne2x4q9wbyaurva",
+    "firstSeen": 1774387793643,
+    "lastSeen": 1774387793643,
+    "timesSeen": 1,
+    "tokenSymbol": "TSUKI",
+    "tokenAddress": "463SK47VkB7uE7XenTHKiVcMtxRsfNE2X4Q9wByaURVA",
+    "pattern": "token_mention",
+    "avgRiskScore": 10,
+    "lastRiskScore": 10,
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "insufficient hard evidence in text alone",
+    "history": [
+      {
+        "time": 1774387793643,
+        "riskScore": 10,
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone"
       }
     ]
   }

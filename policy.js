@@ -9,15 +9,31 @@ function normalizeText(text) {
     .trim();
 }
 
+function isExplicitScanRequest(text) {
+  const t = (text || "").toLowerCase();
+  return (
+    t.includes("check ") ||
+    t.includes("scan ") ||
+    t.includes("what do you think") ||
+    t.includes("thoughts on") ||
+    t.includes("main risk") ||
+    t.includes("look at ") ||
+    t.includes("is this safe") ||
+    t.includes("is this a rug") ||
+    t.includes("rug?")
+  );
+}
+
 function shouldReply({ tweet, classification, repliedData, state }) {
   if (!tweet || !classification) {
     return { allow: false, reason: "missing_data" };
   }
 
-  const label = classification.label || "";
+  const label = classification.label || "ignore";
   const confidence = classification.confidence || 0;
   const authorId = String(tweet.author_id || "");
   const normalized = normalizeText(tweet.text);
+  const explicitScan = isExplicitScanRequest(tweet.text);
   const now = Date.now();
 
   if (label === "ignore") {
@@ -32,37 +48,42 @@ function shouldReply({ tweet, classification, repliedData, state }) {
     return { allow: false, reason: "duplicate_text" };
   }
 
-  // TEMP TEST MODE: 5 min per-user cooldown
-  const lastUserReply = repliedData.authorCooldowns?.[authorId] || 0;
-  if (now - lastUserReply < 5 * 60 * 1000) {
+  const lastReplyAt = repliedData.authorCooldowns?.[authorId] || 0;
+  const cooldown = explicitScan ? 60 * 1000 : 5 * 60 * 1000;
+
+  if (now - lastReplyAt < cooldown) {
     return { allow: false, reason: "author_cooldown" };
   }
 
-  // Global cooldown: 2 min between replies
-  const recentGlobalReplies = (state.globalReplyTimes || []).filter(
-    (ts) => now - ts < 2 * 60 * 1000
+  const recent = (state.globalReplyTimes || []).filter(
+    (t) => now - t < 2 * 60 * 1000
   );
-  if (recentGlobalReplies.length >= 1) {
+
+  if (recent.length >= 2 && !explicitScan && label !== "scam_alert") {
     return { allow: false, reason: "global_rate_limit" };
   }
 
-  if (
-    label === "scam_alert" ||
-    label === "contract_risk" ||
-    label === "wallet_risk" ||
-    label === "project_dd"
-  ) {
-    if (confidence >= 0.82) {
-      return { allow: true, reason: "high_value_signal" };
-    }
-    return { allow: false, reason: "confidence_too_low" };
+  // 🔥 FIXED
+  if (label === "scam_alert" && confidence >= 0.7) {
+    return { allow: true, reason: "scam_alert_allowed" };
   }
 
-  if (label === "security_education" && confidence >= 0.88) {
+  if (explicitScan && confidence >= 0.65) {
+    return { allow: true, reason: "explicit_scan_request" };
+  }
+
+  if (
+    ["contract_risk", "wallet_risk", "project_dd"].includes(label) &&
+    confidence >= 0.75
+  ) {
+    return { allow: true, reason: "high_value_signal" };
+  }
+
+  if (label === "security_education" && confidence >= 0.6) {
     return { allow: true, reason: "education_allowed" };
   }
 
   return { allow: false, reason: "not_relevant" };
 }
 
-module.exports = { shouldReply, normalizeText };
+module.exports = { normalizeText, isExplicitScanRequest, shouldReply };

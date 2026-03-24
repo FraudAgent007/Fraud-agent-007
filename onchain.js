@@ -1,278 +1,73 @@
-async function fetchJson(url) {
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "FraudAgent007/1.0",
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} for ${url}`);
-  }
-
-  return res.json();
-}
-
 function extractAddress(text) {
-  const match = (text || "").match(/\b0x[a-fA-F0-9]{40}\b/);
-  return match ? match[0] : null;
+  const m = (text || "").match(/\b0x[a-fA-F0-9]{40}\b/);
+  return m ? m[0] : null;
 }
 
-function extractTickers(text) {
-  const matches = (text || "").match(/\$([A-Za-z0-9]{2,15})\b/g);
-  if (!matches) return [];
-  return [...new Set(matches.map((t) => t.replace("$", "").toUpperCase()))];
+function extractTicker(text) {
+  const m = (text || "").match(/\$([A-Z0-9]{2,15})\b/i);
+  return m ? m[1].toUpperCase() : null;
 }
 
-const MAJOR_TOKENS = ["BTC", "ETH", "BNB", "SOL", "USDT", "USDC"];
-
-function isMajorToken(symbol) {
-  return MAJOR_TOKENS.includes((symbol || "").toUpperCase());
+function isMajorTicker(ticker) {
+  return ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA"].includes(
+    (ticker || "").toUpperCase()
+  );
 }
 
-async function searchDexPairs(query) {
-  const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
-  const data = await fetchJson(url);
-  return data?.pairs || [];
-}
-
-function scorePair(pair, requestedTicker) {
-  const liquidity = Number(pair?.liquidity?.usd || 0);
-  const volume = Number(pair?.volume?.h24 || 0);
-  const buys = Number(pair?.txns?.h24?.buys || 0);
-  const sells = Number(pair?.txns?.h24?.sells || 0);
-
-  let score = liquidity * 0.6 + volume * 0.3 + (buys + sells) * 10;
-
-  const base = (pair?.baseToken?.symbol || "").toUpperCase();
-  const quote = (pair?.quoteToken?.symbol || "").toUpperCase();
-
-  if (requestedTicker) {
-    if (base === requestedTicker) score += 500000;
-    if (quote === requestedTicker) score += 100000;
-  }
-
-  return score;
-}
-
-function pickBestPair(pairs, requestedTicker) {
-  if (!Array.isArray(pairs) || !pairs.length) return null;
-
-  return [...pairs].sort((a, b) => {
-    return scorePair(b, requestedTicker) - scorePair(a, requestedTicker);
-  })[0];
-}
-
-function getMatchConfidence(pair, requestedTicker) {
-  if (!pair || !requestedTicker) return "unknown";
-
-  const base = (pair?.baseToken?.symbol || "").toUpperCase();
-  const quote = (pair?.quoteToken?.symbol || "").toUpperCase();
-  const liquidity = Number(pair?.liquidity?.usd || 0);
-  const volume = Number(pair?.volume?.h24 || 0);
-
-  if (base === requestedTicker && liquidity >= 100000 && volume >= 1000) {
-    return "high";
-  }
-
-  if (base === requestedTicker && liquidity >= 25000) {
-    return "medium";
-  }
-
-  if (quote === requestedTicker && liquidity >= 25000) {
-    return "low";
-  }
-
-  return "low";
+function isBroadQuestion(text) {
+  const lower = (text || "").toLowerCase();
+  return (
+    lower.includes("best security") ||
+    lower.includes("which is safer") ||
+    (text.match(/\$/g) || []).length > 1
+  );
 }
 
 async function getDexContextFromText(text) {
-  const address = extractAddress(text);
-  const tickers = extractTickers(text);
+  const ticker = extractTicker(text);
 
-  if (address) {
-    const pairs = await searchDexPairs(address);
-    const bestPair = pickBestPair(pairs, null);
-
-    if (!bestPair) return null;
-
-    return {
-      type: "address",
-      address,
-      token: bestPair.baseToken?.symbol || null,
-      bestPair,
-      pairs,
-      matchConfidence: "high",
-    };
+  // 🔥 FIXED
+  if (ticker && isMajorTicker(ticker) && isBroadQuestion(text)) {
+    return { found: false };
   }
 
-  if (tickers.length > 1) {
-    return {
-      type: "multi_token",
-      tokens: tickers,
-      matchConfidence: "none",
-    };
-  }
-
-  if (tickers.length === 1) {
-    const token = tickers[0];
-
-    if (isMajorToken(token)) {
-      return {
-        type: "major_token",
-        token,
-        matchConfidence: "none",
-      };
-    }
-
-    const pairs = await searchDexPairs(token);
-    const bestPair = pickBestPair(pairs, token);
-
-    if (!bestPair) return null;
-
-    return {
-      type: "token",
-      token,
-      bestPair,
-      pairs,
-      matchConfidence: getMatchConfidence(bestPair, token),
-    };
-  }
-
-  return null;
-}
-
-function mapDexChainToHoneypot(chainId) {
-  const map = {
-    ethereum: 1,
-    bsc: 56,
-    polygon: 137,
-    base: 8453,
-    arbitrum: 42161,
-    avalanche: 43114,
-  };
-
-  return map[chainId] || null;
-}
-
-async function getHoneypotContext(chainId, tokenAddress) {
-  if (!chainId || !tokenAddress) return null;
-
-  const url = `https://api.honeypot.is/v2/IsHoneypot?chainID=${encodeURIComponent(
-    chainId
-  )}&address=${encodeURIComponent(tokenAddress)}`;
+  if (!ticker) return { found: false };
 
   try {
-    return await fetchJson(url);
+    const res = await fetch(
+      `https://api.dexscreener.com/latest/dex/search?q=${ticker}`
+    );
+    const json = await res.json();
+
+    if (!json?.pairs?.length) return { found: false };
+
+    const best = json.pairs.sort(
+      (a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
+    )[0];
+
+    return { found: true, bestPair: best };
   } catch {
-    return null;
+    return { found: false };
   }
 }
 
-function summarizeOnchain(dexContext, honeypotContext) {
-  const summary = {
-    found: false,
-    matchConfidence: dexContext?.matchConfidence || "unknown",
-    chainId: null,
-    dexId: null,
-    tokenAddress: null,
-    tokenSymbol: null,
-    pairAddress: null,
-    pairUrl: null,
-    priceUsd: null,
-    liquidityUsd: null,
-    volume24h: null,
-    fdv: null,
-    marketCap: null,
-    pairAgeMs: null,
-    buys24h: null,
-    sells24h: null,
-    honeypot: null,
-    buyTax: null,
-    sellTax: null,
-    transferTax: null,
-    flags: [],
-    nextChecks: [],
+function summarizeOnchain(ctx) {
+  if (!ctx?.bestPair) return { found: false };
+
+  const p = ctx.bestPair;
+
+  return {
+    found: true,
+    chainId: p.chainId,
+    tokenAddress: p.baseToken.address,
+    tokenSymbol: p.baseToken.symbol,
+    liquidityUsd: p.liquidity?.usd || 0
   };
-
-  if (!dexContext?.bestPair) {
-    return summary;
-  }
-
-  const pair = dexContext.bestPair;
-
-  summary.found = true;
-  summary.chainId = pair.chainId || null;
-  summary.dexId = pair.dexId || null;
-  summary.tokenAddress = pair.baseToken?.address || dexContext.address || null;
-  summary.tokenSymbol = pair.baseToken?.symbol || dexContext.token || null;
-  summary.pairAddress = pair.pairAddress || null;
-  summary.pairUrl = pair.url || null;
-  summary.priceUsd = pair.priceUsd ? Number(pair.priceUsd) : null;
-  summary.liquidityUsd = pair.liquidity?.usd ?? null;
-  summary.volume24h = pair.volume?.h24 ?? null;
-  summary.fdv = pair.fdv ?? null;
-  summary.marketCap = pair.marketCap ?? null;
-  summary.pairAgeMs = pair.pairCreatedAt
-    ? Date.now() - Number(pair.pairCreatedAt)
-    : null;
-  summary.buys24h = pair.txns?.h24?.buys ?? null;
-  summary.sells24h = pair.txns?.h24?.sells ?? null;
-
-  if (summary.matchConfidence === "low") {
-    summary.flags.push("weak_token_match");
-    summary.nextChecks.push("verify that the resolved pair is the intended token");
-  }
-
-  if ((summary.liquidityUsd ?? 0) < 25000) {
-    summary.flags.push("low_liquidity");
-    summary.nextChecks.push("verify LP depth and who controls liquidity");
-  }
-
-  if (summary.pairAgeMs !== null && summary.pairAgeMs < 24 * 60 * 60 * 1000) {
-    summary.flags.push("new_pair");
-    summary.nextChecks.push("treat fresh pools as high-risk until structure is verified");
-  }
-
-  if (
-    summary.buys24h !== null &&
-    summary.sells24h !== null &&
-    summary.buys24h > 0 &&
-    summary.sells24h === 0
-  ) {
-    summary.flags.push("buy_sell_imbalance");
-    summary.nextChecks.push("verify whether sells are functioning normally");
-  }
-
-  if (honeypotContext) {
-    summary.honeypot = honeypotContext?.honeypotResult?.isHoneypot ?? null;
-    summary.buyTax = honeypotContext?.simulationResult?.buyTax ?? null;
-    summary.sellTax = honeypotContext?.simulationResult?.sellTax ?? null;
-    summary.transferTax = honeypotContext?.simulationResult?.transferTax ?? null;
-
-    if (summary.honeypot === true) {
-      summary.flags.push("honeypot_detected");
-      summary.nextChecks.push("do not assume exits are possible without confirming sell behavior");
-    }
-
-    if ((summary.sellTax ?? 0) >= 20) {
-      summary.flags.push("high_sell_tax");
-      summary.nextChecks.push("verify whether sell tax makes exits non-viable");
-    }
-  }
-
-  summary.flags = [...new Set(summary.flags)];
-  summary.nextChecks = [...new Set(summary.nextChecks)];
-
-  return summary;
 }
 
 module.exports = {
   extractAddress,
-  extractTickers,
-  isMajorToken,
+  extractTicker,
   getDexContextFromText,
-  getHoneypotContext,
-  mapDexChainToHoneypot,
-  summarizeOnchain,
+  summarizeOnchain
 };

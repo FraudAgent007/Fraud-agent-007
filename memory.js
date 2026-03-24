@@ -20,7 +20,7 @@ function loadRepliedData() {
   return loadJson(REPLIED_FILE, {
     tweetIds: [],
     textHashes: [],
-    authorCooldowns: {},
+    authorCooldowns: {}
   });
 }
 
@@ -30,10 +30,11 @@ function saveRepliedData(data) {
 
 function loadState() {
   return loadJson(STATE_FILE, {
+    sinceId: null,
     globalReplyTimes: [],
     recentSignals: [],
-    postHistory: [],
-    lastThreatPostAt: 0,
+    patternCounts: {},
+    lastThreatPostAt: 0
   });
 }
 
@@ -45,5 +46,5 @@ module.exports = {
   loadRepliedData,
   saveRepliedData,
   loadState,
-  saveState,
+  saveState
 };

@@ -1,76 +1,62 @@
 require("dotenv").config();
+
 const fs = require("fs");
 const { TwitterApi } = require("twitter-api-v2");
 
 const { classifyMention } = require("./classifier");
 const { shouldReply, normalizeText } = require("./policy");
-const { generateReply } = require("./responder");
 const { analyzeRisk } = require("./riskEngine");
 const { updatePatternMemory, getPatternInsight } = require("./patternMemory");
 const { updateSignalMemory } = require("./signalEngine");
+const { loadCases, saveCases, updateCaseMemory, summarizeCase } = require("./caseMemory");
+const { loadRepliedData, saveRepliedData, loadState, saveState } = require("./memory");
+const { getDexContextFromText, summarizeOnchain, dexChainToRpcKey } = require("./onchain");
 const { RpcPool } = require("./rpcClient");
 const { inspectContract } = require("./contractLayer");
-const { detectSellBlock } = require("./honeypot");
-const { decideResponse } = require("./decisionEngine");
-const { getTopHolders } = require("./holderLayer");
+const { getTopHolders, analyzeHolderRisk } = require("./holderLayer");
+const { buildReasoningBrain } = require("./reasoningBrain");
+const { generateReply } = require("./responder");
 const { shouldPostThreatBrief } = require("./threatEngine");
 const { generateThreatBrief } = require("./threatPoster");
-const {
-  getDexContextFromText,
-  getHoneypotContext,
-  mapDexChainToHoneypot,
-  summarizeOnchain,
-} = require("./onchain");
-const {
-  loadCases,
-  saveCases,
-  updateCaseMemory,
-  summarizeCase,
-} = require("./caseMemory");
-const {
-  loadRepliedData,
-  saveRepliedData,
-  loadState,
-  saveState,
-} = require("./memory");
 
 const LOCK_FILE = "bot.lock";
 
 if (fs.existsSync(LOCK_FILE)) {
-  const lockTime = parseInt(fs.readFileSync(LOCK_FILE, "utf8"), 10);
-  const now = Date.now();
-
-  if (now - lockTime > 2 * 60 * 1000) {
-    console.log("Old lock detected -> removing...");
+  try {
+    const lockTime = parseInt(fs.readFileSync(LOCK_FILE, "utf8"), 10);
+    if (Date.now() - lockTime < 120000) {
+      console.log("Another bot instance is already running.");
+      process.exit(1);
+    }
     fs.unlinkSync(LOCK_FILE);
-  } else {
-    console.log("Another bot instance is already running.");
-    process.exit(1);
-  }
+  } catch {}
 }
 
 fs.writeFileSync(LOCK_FILE, String(Date.now()));
 
-function cleanupAndExit() {
+function cleanup() {
   try {
     if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
   } catch {}
-  process.exit(0);
 }
 
-process.on("SIGINT", cleanupAndExit);
-process.on("SIGTERM", cleanupAndExit);
-process.on("exit", () => {
-  try {
-    if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE);
-  } catch {}
+process.on("SIGINT", () => {
+  cleanup();
+  process.exit(0);
 });
+
+process.on("SIGTERM", () => {
+  cleanup();
+  process.exit(0);
+});
+
+process.on("exit", cleanup);
 
 const client = new TwitterApi({
   appKey: process.env.API_KEY,
   appSecret: process.env.API_SECRET,
   accessToken: process.env.ACCESS_TOKEN,
-  accessSecret: process.env.ACCESS_SECRET,
+  accessSecret: process.env.ACCESS_SECRET
 });
 
 const rwClient = client.readWrite;
@@ -81,74 +67,12 @@ let cases = loadCases();
 let isProcessing = false;
 let isThreatPosting = false;
 
-function isFreshTweet(tweet) {
-  if (!tweet.created_at) return true;
-  const created = new Date(tweet.created_at).getTime();
-  return Date.now() - created <= 24 * 60 * 60 * 1000;
-}
-
-function getRpcForDexChain(chainId) {
-  switch ((chainId || "").toLowerCase()) {
-    case "ethereum":
-      return process.env.ETH_RPC_URL || null;
-    case "bsc":
-      return process.env.BSC_RPC_URL || null;
-    case "polygon":
-      return process.env.POLYGON_RPC_URL || null;
-    case "base":
-      return process.env.BASE_RPC_URL || null;
-    case "arbitrum":
-      return process.env.ARBITRUM_RPC_URL || null;
-    case "avalanche":
-      return process.env.AVALANCHE_RPC_URL || null;
-    default:
-      return null;
-  }
-}
-
-async function safeClassify(text) {
-  try {
-    return await classifyMention(text);
-  } catch (err) {
-    console.error("Classification failed:", err.message || err);
-    return { label: "ignore", confidence: 0, reason: "classification_error" };
-  }
-}
-
-async function safeGenerateReply(
-  text,
-  label,
-  risk,
-  onchain,
-  contractCtx,
-  decision,
-  caseSummary,
-  holderCtx
-) {
-  try {
-    return await generateReply(
-      text,
-      label,
-      risk,
-      onchain,
-      contractCtx,
-      decision,
-      caseSummary,
-      holderCtx
-    );
-  } catch (err) {
-    console.error("Reply generation failed:", err.message || err);
-    return null;
-  }
-}
-
-async function safeGenerateThreatBrief(payload) {
-  try {
-    return await generateThreatBrief(payload);
-  } catch (err) {
-    console.error("Threat brief generation failed:", err.message || err);
-    return null;
-  }
+function buildRpcPoolForChain(chainId) {
+  const key = dexChainToRpcKey(chainId);
+  if (!key) return null;
+  const urls = (process.env[key] || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!urls.length) return null;
+  return new RpcPool(urls);
 }
 
 async function processMentions() {
@@ -159,152 +83,103 @@ async function processMentions() {
     const me = await rwClient.v2.me();
     const botUserId = me.data.id;
 
-    console.log("Fraud Agent 007 Threat Brain running as:", me.data.username);
+    console.log("Fraud Agent 007 running as:", me.data.username);
 
     const mentions = await rwClient.v2.userMentionTimeline(botUserId, {
       max_results: 10,
-      "tweet.fields": ["author_id", "created_at"],
+      since_id: state.sinceId || undefined,
+      "tweet.fields": ["author_id", "created_at"]
     });
 
-    const tweets = (mentions.data?.data || []).slice(0, 5).reverse();
+    const tweets = (mentions.data?.data || []).reverse();
+    console.log("New mentions found:", tweets.length);
+
+    if (tweets.length) {
+      state.sinceId = tweets[tweets.length - 1].id;
+      saveState(state);
+    }
 
     for (const tweet of tweets) {
       console.log("\nChecking:", tweet.id);
       console.log("Text:", tweet.text);
-
-      if (!isFreshTweet(tweet)) {
-        console.log("Skip: stale_tweet");
-        continue;
-      }
 
       if (String(tweet.author_id) === String(botUserId)) {
         console.log("Skip: self_tweet");
         continue;
       }
 
-      const classification = await safeClassify(tweet.text);
+      const classification = await classifyMention(tweet.text);
       console.log("Classification:", classification);
 
       const policyDecision = shouldReply({
         tweet,
         classification,
         repliedData,
-        state,
+        state
       });
       console.log("Policy:", policyDecision);
 
       const pattern = updatePatternMemory(state, tweet.text);
-      const insight = getPatternInsight(state, tweet.text);
+      const patternInsight = getPatternInsight(state, tweet.text);
       const risk = analyzeRisk(tweet.text, classification.label);
+
       const signal = updateSignalMemory(state, tweet, classification, risk);
+      signal.pattern = pattern;
 
       console.log("Pattern:", pattern);
-      console.log("Pattern Insight:", insight);
-      console.log("Signal:", signal);
+      console.log("Pattern Insight:", patternInsight);
       console.log("Risk:", risk);
-
-      // keep recent signals for threat engine
-      state.recentSignals = [...(state.recentSignals || []), signal]
-        .filter((s) => Date.now() - s.time < 24 * 60 * 60 * 1000)
-        .slice(-300);
 
       let onchain = {
         found: false,
         flags: [],
-        nextChecks: [],
+        nextChecks: []
       };
 
       let contractCtx = {
         found: false,
         flags: [],
-        nextChecks: [],
+        nextChecks: []
       };
 
       let holderCtx = {
         found: false,
         flags: [],
-        nextChecks: [],
+        nextChecks: []
       };
 
-      const ONCHAIN_ALLOWED = ["project_dd", "contract_risk", "scam_alert"];
+      const dexContext = await getDexContextFromText(tweet.text);
+      onchain = summarizeOnchain(dexContext);
 
-      if (ONCHAIN_ALLOWED.includes(classification.label)) {
-        try {
-          const dexContext = await getDexContextFromText(tweet.text);
+      if (onchain.found && onchain.chainId && onchain.tokenAddress) {
+        const rpc = buildRpcPoolForChain(onchain.chainId);
 
-          if (dexContext?.type === "multi_token") {
-            console.log("Skip on-chain: multi-token");
-          } else if (dexContext?.type === "major_token") {
-            console.log("Skip on-chain: major token");
-          } else if (dexContext?.bestPair) {
-            if (dexContext.matchConfidence === "low") {
-              console.log("Skip on-chain: weak match");
-            } else {
-              const hpChainId = mapDexChainToHoneypot(dexContext.bestPair.chainId);
-              const tokenAddress = dexContext.bestPair.baseToken?.address;
-
-              const honeypotContext =
-                hpChainId && tokenAddress
-                  ? await getHoneypotContext(hpChainId, tokenAddress)
-                  : null;
-
-              onchain = summarizeOnchain(dexContext, honeypotContext);
-
-              const rpcUrl = getRpcForDexChain(dexContext.bestPair.chainId);
-
-              if (rpcUrl && tokenAddress) {
-                const rpc = new RpcPool([rpcUrl]);
-
-                contractCtx = await inspectContract({
-                  rpc,
-                  tokenAddress,
-                });
-
-                const probeHolder =
-                  contractCtx?.owner && contractCtx.owner !== null
-                    ? contractCtx.owner
-                    : null;
-
-                if (probeHolder) {
-                  const sellProbe = await detectSellBlock({
-                    rpc,
-                    dexChainId: dexContext.bestPair.chainId,
-                    tokenAddress,
-                    candidateHolder: probeHolder,
-                  });
-
-                  if (sellProbe?.sellBlockedLikely === true) {
-                    contractCtx.flags.push("sell_block_likely");
-                    contractCtx.nextChecks.push(
-                      "transfers to the pool appear blocked for the probe holder"
-                    );
-                  }
-                }
-
-                contractCtx.flags = [...new Set(contractCtx.flags || [])];
-                contractCtx.nextChecks = [
-                  ...new Set(contractCtx.nextChecks || []),
-                ];
-              } else {
-                console.log("Skip contract brain: missing RPC URL for chain");
-              }
-
-              if (tokenAddress) {
-                holderCtx = await getTopHolders(
-                  dexContext.bestPair.chainId,
-                  tokenAddress,
-                  20
-                );
-              }
-            }
-          } else {
-            console.log("Skip on-chain: no match");
+        if (rpc) {
+          try {
+            contractCtx = await inspectContract({
+              rpc,
+              tokenAddress: onchain.tokenAddress
+            });
+          } catch (err) {
+            console.error("Contract error:", err.message || err);
           }
-        } catch (err) {
-          console.error("On-chain/contract/holder error:", err.message || err);
         }
-      } else {
-        console.log("Skip on-chain: not relevant");
+
+        try {
+          const rawHolders = await getTopHolders({
+            chainId: onchain.chainId,
+            tokenAddress: onchain.tokenAddress
+          });
+
+          holderCtx = rawHolders.found
+            ? analyzeHolderRisk({
+                holders: rawHolders.holders || [],
+                totalSupply: contractCtx.totalSupply || null
+              })
+            : rawHolders;
+        } catch (err) {
+          console.error("Holder error:", err.message || err);
+        }
       }
 
       console.log("On-chain:", onchain);
@@ -312,20 +187,18 @@ async function processMentions() {
       console.log("Holders:", holderCtx);
 
       const primaryRisk =
-        holderCtx?.flags?.[0] ||
-        contractCtx?.flags?.[0] ||
-        onchain?.flags?.[0] ||
-        risk?.redFlags?.[0] ||
+        contractCtx.primaryRisk ||
+        holderCtx.flags?.[0] ||
+        risk.redFlags?.[0] ||
         "unverified_structure";
 
       const caseEntry = updateCaseMemory(cases, {
-        tokenSymbol: onchain?.tokenSymbol || null,
-        tokenAddress: onchain?.tokenAddress || null,
+        tokenSymbol: onchain.tokenSymbol || null,
+        tokenAddress: onchain.tokenAddress || null,
         pattern,
-        label: classification.label,
-        riskLevel: risk?.riskLevel || "unknown",
-        primaryRisk,
-        source: "mention",
+        riskScore: risk.score,
+        riskLevel: risk.riskLevel,
+        primaryRisk
       });
 
       saveCases(cases);
@@ -333,36 +206,34 @@ async function processMentions() {
       const caseSummary = summarizeCase(caseEntry);
       console.log("Case Memory:", caseSummary);
 
-      const decision = decideResponse({
-        tweetText: tweet.text,
+      const brain = buildReasoningBrain({
         classification,
         risk,
         onchain,
         contractCtx,
-        caseSummary,
         holderCtx,
+        caseSummary,
+        policyDecision
       });
-      console.log("Decision Engine:", decision);
+
+      console.log("Brain Evidence:", brain.evidence);
+      console.log("Brain Reasoning:", brain.reasoning);
+      console.log("Brain Plan:", brain.plan);
 
       saveState(state);
 
-      if (!policyDecision.allow) continue;
-      if (decision.action !== "reply") continue;
+      if (brain.plan.action !== "reply") continue;
 
-      const enrichedText = insight
-        ? `${tweet.text}\nPattern: ${insight}`
-        : tweet.text;
-
-      const reply = await safeGenerateReply(
-        enrichedText,
-        classification.label,
+      const reply = await generateReply({
+        tweetText: patternInsight ? `${tweet.text}\n${patternInsight}` : tweet.text,
+        classification,
         risk,
         onchain,
         contractCtx,
-        decision,
+        holderCtx,
         caseSummary,
-        holderCtx
-      );
+        brain
+      });
 
       if (!reply) continue;
 
@@ -380,19 +251,18 @@ async function processMentions() {
       repliedData.textHashes.push(normalizeText(tweet.text));
       repliedData.authorCooldowns[tweet.author_id] = Date.now();
 
-      repliedData.tweetIds = repliedData.tweetIds.slice(-500);
-      repliedData.textHashes = repliedData.textHashes.slice(-500);
+      repliedData.tweetIds = repliedData.tweetIds.slice(-1000);
+      repliedData.textHashes = repliedData.textHashes.slice(-1000);
 
       saveRepliedData(repliedData);
 
-      const now = Date.now();
-      state.globalReplyTimes = [...(state.globalReplyTimes || []), now]
-        .filter((t) => now - t < 24 * 60 * 60 * 1000)
-        .slice(-200);
+      state.globalReplyTimes = [...(state.globalReplyTimes || []), Date.now()]
+        .filter((t) => Date.now() - t < 24 * 60 * 60 * 1000)
+        .slice(-500);
 
       saveState(state);
 
-      await new Promise((resolve) => setTimeout(resolve, 10000));
+      await new Promise((resolve) => setTimeout(resolve, 7000));
     }
   } catch (err) {
     console.error("Main loop error:", err.message || err);
@@ -411,9 +281,8 @@ async function maybePostThreatBrief() {
 
     if (!verdict.allow) return;
 
-    const post = await safeGenerateThreatBrief({
-      severity: verdict.severity,
-      summary: verdict.summary,
+    const post = await generateThreatBrief({
+      summary: verdict.summary
     });
 
     if (!post) return;
@@ -421,13 +290,11 @@ async function maybePostThreatBrief() {
     try {
       await rwClient.v2.tweet(post);
       console.log("Threat brief posted:", post);
+      state.lastThreatPostAt = Date.now();
+      saveState(state);
     } catch (err) {
-      console.error("Threat brief post failed:", err.message || err);
-      return;
+      console.error("Threat post failed:", err.message || err);
     }
-
-    state.lastThreatPostAt = Date.now();
-    saveState(state);
   } finally {
     isThreatPosting = false;
   }
