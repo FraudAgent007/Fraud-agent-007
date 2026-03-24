@@ -2,13 +2,13 @@
   "address:0x4f1a7d1742d005a58f58fa6837aa9b3b7cb1cda2": {
     "key": "address:0x4f1a7d1742d005a58f58fa6837aa9b3b7cb1cda2",
     "firstSeen": 1774311984841,
-    "lastSeen": 1774312344835,
-    "timesSeen": 6,
+    "lastSeen": 1774312876690,
+    "timesSeen": 7,
     "tokenSymbol": "GROW",
     "tokenAddress": "0x4f1a7d1742d005A58F58FA6837AA9B3B7Cb1cDa2",
     "pattern": "token_mention",
     "labels": {
-      "project_dd": 6
+      "project_dd": 7
     },
     "latestRiskLevel": "low",
     "latestPrimaryRisk": "buy_sell_imbalance",
@@ -53,6 +53,217 @@
         "label": "project_dd",
         "riskLevel": "low",
         "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312876690,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      }
+    ]
+  },
+  "address:0x1223334444a7466fbf985b14e1f4edaf3883bca6": {
+    "key": "address:0x1223334444a7466fbf985b14e1f4edaf3883bca6",
+    "firstSeen": 1774355874721,
+    "lastSeen": 1774356225923,
+    "timesSeen": 5,
+    "tokenSymbol": "GROW",
+    "tokenAddress": "0x1223334444A7466fBf985B14E1F4EdAf3883bCa6",
+    "pattern": "token_mention",
+    "labels": {
+      "project_dd": 5
+    },
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "mint_function_detected",
+    "history": [
+      {
+        "time": 1774355874721,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774355968219,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774356044359,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774356154637,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "mint_function_detected",
+        "source": "mention"
+      },
+      {
+        "time": 1774356225923,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "mint_function_detected",
+        "source": "mention"
+      }
+    ]
+  },
+  "pattern:external_link": {
+    "key": "pattern:external_link",
+    "firstSeen": 1774355876859,
+    "lastSeen": 1774356227436,
+    "timesSeen": 5,
+    "tokenSymbol": null,
+    "tokenAddress": null,
+    "pattern": "external_link",
+    "labels": {
+      "scam_alert": 5
+    },
+    "latestRiskLevel": "medium",
+    "latestPrimaryRisk": "external link or wallet-connect risk",
+    "history": [
+      {
+        "time": 1774355876859,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "external link or wallet-connect risk",
+        "source": "mention"
+      },
+      {
+        "time": 1774355970801,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "external link or wallet-connect risk",
+        "source": "mention"
+      },
+      {
+        "time": 1774356045774,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "external link or wallet-connect risk",
+        "source": "mention"
+      },
+      {
+        "time": 1774356156289,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "external link or wallet-connect risk",
+        "source": "mention"
+      },
+      {
+        "time": 1774356227436,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "external link or wallet-connect risk",
+        "source": "mention"
+      }
+    ]
+  },
+  "pattern:urgency_link": {
+    "key": "pattern:urgency_link",
+    "firstSeen": 1774355892049,
+    "lastSeen": 1774356229218,
+    "timesSeen": 5,
+    "tokenSymbol": null,
+    "tokenAddress": null,
+    "pattern": "urgency_link",
+    "labels": {
+      "scam_alert": 5
+    },
+    "latestRiskLevel": "medium",
+    "latestPrimaryRisk": "urgency pressure",
+    "history": [
+      {
+        "time": 1774355892049,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "urgency pressure",
+        "source": "mention"
+      },
+      {
+        "time": 1774355973663,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "urgency pressure",
+        "source": "mention"
+      },
+      {
+        "time": 1774356047866,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "urgency pressure",
+        "source": "mention"
+      },
+      {
+        "time": 1774356160704,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "urgency pressure",
+        "source": "mention"
+      },
+      {
+        "time": 1774356229218,
+        "label": "scam_alert",
+        "riskLevel": "medium",
+        "primaryRisk": "urgency pressure",
+        "source": "mention"
+      }
+    ]
+  },
+  "address:gadg5djgnnmubuh4n8pxm7yxkjtadmpuu3pz2c8zpump": {
+    "key": "address:gadg5djgnnmubuh4n8pxm7yxkjtadmpuu3pz2c8zpump",
+    "firstSeen": 1774355892275,
+    "lastSeen": 1774356229495,
+    "timesSeen": 5,
+    "tokenSymbol": "Tsuki",
+    "tokenAddress": "GAdg5dJgNNmuBUh4N8PXM7YXKjTADmPuu3pZ2C8Zpump",
+    "pattern": "token_mention",
+    "labels": {
+      "project_dd": 5
+    },
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "insufficient hard evidence in text alone",
+    "history": [
+      {
+        "time": 1774355892275,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774355973858,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774356060622,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774356160969,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
+        "source": "mention"
+      },
+      {
+        "time": 1774356229495,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "insufficient hard evidence in text alone",
         "source": "mention"
       }
     ]

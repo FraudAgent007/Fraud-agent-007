@@ -24,9 +24,9 @@ function modeInstruction(label) {
 function strategyInstruction(strategy) {
   switch (strategy) {
     case "hard_warning":
-      return "Use direct, sharp language. Lead with the strongest verified risk.";
+      return "Use direct, sharp language. Lead with the strongest verified risk and keep it assertive.";
     case "needs_contract":
-      return "Say structure is still unverified and imply the exact contract is needed for real assessment.";
+      return "Say structure is still unverified and make clear that exact contract resolution is needed.";
     case "educational":
       return "Be practical and checklist-driven.";
     case "cautious_dd":
@@ -42,7 +42,8 @@ async function generateReply(
   onchain,
   contractCtx,
   decision = {},
-  caseSummary = {}
+  caseSummary = {},
+  holderCtx = {}
 ) {
   const mode = modeInstruction(label);
   const strategy = decision?.strategy || "cautious_dd";
@@ -62,9 +63,8 @@ Global rules:
 - no hashtags
 - no slang
 - no hype
-- no financial advice
-- no generic filler
 - do not overclaim certainty
+- no financial advice
 - max 220 characters
 - end with "$F007"
 
@@ -94,8 +94,17 @@ next_checks=${(onchain?.nextChecks || []).join(", ")}
 
 Contract context:
 found=${contractCtx?.found === true ? "true" : "false"}
+contract_risk_level=${contractCtx?.riskLevel || ""}
+contract_risk_score=${contractCtx?.riskScore ?? ""}
 flags=${(contractCtx?.flags || []).join(", ")}
 next_checks=${(contractCtx?.nextChecks || []).join(", ")}
+
+Holder context:
+found=${holderCtx?.found === true ? "true" : "false"}
+top1_pct_sample=${holderCtx?.top1PctOfSample ?? ""}
+top5_pct_sample=${holderCtx?.top5PctOfSample ?? ""}
+holder_flags=${(holderCtx?.flags || []).join(", ")}
+holder_next_checks=${(holderCtx?.nextChecks || []).join(", ")}
 
 Case memory:
 seen_before=${caseSummary?.seenBefore === true ? "true" : "false"}
@@ -109,7 +118,7 @@ ${decision?.reason || ""}
 Mention:
 "${tweetText}"
 
-If case memory shows this entity was seen before, use that naturally only if it improves the reply.
+If contract risk is strong, prioritize that over generic wording.
 Write the best final reply now.
 `;
 
@@ -122,18 +131,18 @@ Write the best final reply now.
 
   if (!text) {
     if (strategy === "needs_contract") {
-      return "Main risk is still unverified structure. Share the exact contract, then verify owner control, LP custody, and transfer restrictions. $F007";
+      return "Main risk is still unverified structure. Share the exact contract, then verify owner control, holder concentration, and LP custody. $F007";
     }
 
     if (strategy === "hard_warning") {
-      return "Main risk is mutable control, not narrative. Verify owner privileges, proxy authority, and transfer restrictions before trusting it. $F007";
+      return "Main risk is mutable contract control, not narrative. Verify proxy/admin rights, mintability, and holder concentration before trusting it. $F007";
     }
 
     if (strategy === "educational") {
-      return "Security is mostly about structure, not brand. Verify control, upgrade rights, and holder concentration before trusting any setup. $F007";
+      return "Security comes from structure, not branding. Check control, upgrade rights, and holder concentration before trusting any setup. $F007";
     }
 
-    return "Main risk is unverified structure. Verify contract control, liquidity ownership, and holder concentration before trusting it. $F007";
+    return "Main risk is unverified structure. Verify contract control, holder concentration, and liquidity ownership before trusting it. $F007";
   }
 
   return text;

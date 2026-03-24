@@ -12,6 +12,9 @@ const { RpcPool } = require("./rpcClient");
 const { inspectContract } = require("./contractLayer");
 const { detectSellBlock } = require("./honeypot");
 const { decideResponse } = require("./decisionEngine");
+const { getTopHolders } = require("./holderLayer");
+const { shouldPostThreatBrief } = require("./threatEngine");
+const { generateThreatBrief } = require("./threatPoster");
 const {
   getDexContextFromText,
   getHoneypotContext,
@@ -76,11 +79,12 @@ let repliedData = loadRepliedData();
 let state = loadState();
 let cases = loadCases();
 let isProcessing = false;
+let isThreatPosting = false;
 
 function isFreshTweet(tweet) {
   if (!tweet.created_at) return true;
   const created = new Date(tweet.created_at).getTime();
-  return Date.now() - created <= 60 * 60 * 1000;
+  return Date.now() - created <= 24 * 60 * 60 * 1000;
 }
 
 function getRpcForDexChain(chainId) {
@@ -118,7 +122,8 @@ async function safeGenerateReply(
   onchain,
   contractCtx,
   decision,
-  caseSummary
+  caseSummary,
+  holderCtx
 ) {
   try {
     return await generateReply(
@@ -128,10 +133,20 @@ async function safeGenerateReply(
       onchain,
       contractCtx,
       decision,
-      caseSummary
+      caseSummary,
+      holderCtx
     );
   } catch (err) {
     console.error("Reply generation failed:", err.message || err);
+    return null;
+  }
+}
+
+async function safeGenerateThreatBrief(payload) {
+  try {
+    return await generateThreatBrief(payload);
+  } catch (err) {
+    console.error("Threat brief generation failed:", err.message || err);
     return null;
   }
 }
@@ -144,14 +159,14 @@ async function processMentions() {
     const me = await rwClient.v2.me();
     const botUserId = me.data.id;
 
-    console.log("Fraud Agent 007 Memory Brain running as:", me.data.username);
+    console.log("Fraud Agent 007 Threat Brain running as:", me.data.username);
 
     const mentions = await rwClient.v2.userMentionTimeline(botUserId, {
       max_results: 10,
       "tweet.fields": ["author_id", "created_at"],
     });
 
-    const tweets = (mentions.data?.data || []).slice(0, 2).reverse();
+    const tweets = (mentions.data?.data || []).slice(0, 5).reverse();
 
     for (const tweet of tweets) {
       console.log("\nChecking:", tweet.id);
@@ -188,6 +203,11 @@ async function processMentions() {
       console.log("Signal:", signal);
       console.log("Risk:", risk);
 
+      // keep recent signals for threat engine
+      state.recentSignals = [...(state.recentSignals || []), signal]
+        .filter((s) => Date.now() - s.time < 24 * 60 * 60 * 1000)
+        .slice(-300);
+
       let onchain = {
         found: false,
         flags: [],
@@ -195,6 +215,12 @@ async function processMentions() {
       };
 
       let contractCtx = {
+        found: false,
+        flags: [],
+        nextChecks: [],
+      };
+
+      let holderCtx = {
         found: false,
         flags: [],
         nextChecks: [],
@@ -262,12 +288,20 @@ async function processMentions() {
               } else {
                 console.log("Skip contract brain: missing RPC URL for chain");
               }
+
+              if (tokenAddress) {
+                holderCtx = await getTopHolders(
+                  dexContext.bestPair.chainId,
+                  tokenAddress,
+                  20
+                );
+              }
             }
           } else {
             console.log("Skip on-chain: no match");
           }
         } catch (err) {
-          console.error("On-chain/contract error:", err.message || err);
+          console.error("On-chain/contract/holder error:", err.message || err);
         }
       } else {
         console.log("Skip on-chain: not relevant");
@@ -275,8 +309,10 @@ async function processMentions() {
 
       console.log("On-chain:", onchain);
       console.log("Contract:", contractCtx);
+      console.log("Holders:", holderCtx);
 
       const primaryRisk =
+        holderCtx?.flags?.[0] ||
         contractCtx?.flags?.[0] ||
         onchain?.flags?.[0] ||
         risk?.redFlags?.[0] ||
@@ -298,11 +334,13 @@ async function processMentions() {
       console.log("Case Memory:", caseSummary);
 
       const decision = decideResponse({
+        tweetText: tweet.text,
         classification,
         risk,
         onchain,
         contractCtx,
         caseSummary,
+        holderCtx,
       });
       console.log("Decision Engine:", decision);
 
@@ -322,7 +360,8 @@ async function processMentions() {
         onchain,
         contractCtx,
         decision,
-        caseSummary
+        caseSummary,
+        holderCtx
       );
 
       if (!reply) continue;
@@ -362,9 +401,42 @@ async function processMentions() {
   }
 }
 
+async function maybePostThreatBrief() {
+  if (isThreatPosting) return;
+  isThreatPosting = true;
+
+  try {
+    const verdict = shouldPostThreatBrief(state);
+    console.log("Threat Engine:", verdict);
+
+    if (!verdict.allow) return;
+
+    const post = await safeGenerateThreatBrief({
+      severity: verdict.severity,
+      summary: verdict.summary,
+    });
+
+    if (!post) return;
+
+    try {
+      await rwClient.v2.tweet(post);
+      console.log("Threat brief posted:", post);
+    } catch (err) {
+      console.error("Threat brief post failed:", err.message || err);
+      return;
+    }
+
+    state.lastThreatPostAt = Date.now();
+    saveState(state);
+  } finally {
+    isThreatPosting = false;
+  }
+}
+
 async function start() {
   while (true) {
     await processMentions();
+    await maybePostThreatBrief();
     console.log("Waiting 60s...");
     await new Promise((resolve) => setTimeout(resolve, 60000));
   }

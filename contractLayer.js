@@ -5,7 +5,6 @@ const ERC20_META_ABI = new Interface([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
   "function totalSupply() view returns (uint256)",
-  "function transfer(address,uint256) returns (bool)",
 ]);
 
 const OWNERSHIP_ABI = new Interface([
@@ -17,21 +16,15 @@ const PAUSABLE_ABI = new Interface([
   "function paused() view returns (bool)",
 ]);
 
-const ROLE_ABI = new Interface([
-  "function DEFAULT_ADMIN_ROLE() view returns (bytes32)",
-]);
-
 const EIP1967_IMPLEMENTATION_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 const EIP1967_ADMIN_SLOT =
-  "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee117850b5d6103";
+  "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
 const EIP1967_BEACON_SLOT =
   "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
 
 const TOPIC_TRANSFER = id("Transfer(address,address,uint256)");
-const TOPIC_OWNERSHIP_TRANSFERRED = id(
-  "OwnershipTransferred(address,address)"
-);
+const TOPIC_OWNERSHIP_TRANSFERRED = id("OwnershipTransferred(address,address)");
 const TOPIC_ROLE_GRANTED = id("RoleGranted(bytes32,address,address)");
 const TOPIC_PAUSED = id("Paused(address)");
 const TOPIC_UNPAUSED = id("Unpaused(address)");
@@ -40,7 +33,9 @@ function hexSlotToAddress(slotValue) {
   if (!slotValue || slotValue === "0x") return null;
   const hex = slotValue.replace(/^0x/, "").padStart(64, "0");
   const addr = `0x${hex.slice(24)}`;
+
   if (addr.toLowerCase() === ZeroAddress.toLowerCase()) return null;
+
   try {
     return getAddress(addr);
   } catch {
@@ -54,10 +49,10 @@ function hasSelectorInBytecode(bytecode, signature) {
   return bytecode.toLowerCase().includes(selector);
 }
 
-async function safeCall(rpc, to, iface, fn, args = [], from = null) {
+async function safeCall(rpc, to, iface, fn, args = []) {
   try {
     const data = iface.encodeFunctionData(fn, args);
-    const raw = await rpc.ethCall({ to, data, ...(from ? { from } : {}) });
+    const raw = await rpc.ethCall({ to, data });
     const decoded = iface.decodeFunctionResult(fn, raw);
     return decoded?.[0] ?? null;
   } catch {
@@ -117,13 +112,14 @@ async function detectProxy(rpc, address) {
 
 function summarizeBytecodeCapabilities(bytecode) {
   return {
-    ownerFn: hasSelectorInBytecode(bytecode, "owner()"),
-    getOwnerFn: hasSelectorInBytecode(bytecode, "getOwner()"),
+    ownerFn:
+      hasSelectorInBytecode(bytecode, "owner()") ||
+      hasSelectorInBytecode(bytecode, "getOwner()"),
     pausedFn: hasSelectorInBytecode(bytecode, "paused()"),
     mintFn:
       hasSelectorInBytecode(bytecode, "mint(address,uint256)") ||
-      hasSelectorInBytecode(bytecode, "_mint(address,uint256)") ||
-      hasSelectorInBytecode(bytecode, "mint(uint256)"),
+      hasSelectorInBytecode(bytecode, "mint(uint256)") ||
+      hasSelectorInBytecode(bytecode, "_mint(address,uint256)"),
     blacklistFn:
       hasSelectorInBytecode(bytecode, "blacklist(address)") ||
       hasSelectorInBytecode(bytecode, "isBlacklisted(address)") ||
@@ -140,20 +136,114 @@ function summarizeBytecodeCapabilities(bytecode) {
   };
 }
 
+function scoreContractRisk(ctx) {
+  let score = 0;
+  const flags = [];
+  const nextChecks = [];
+
+  if (!ctx.found) {
+    return {
+      riskLevel: "unknown",
+      riskScore: 0,
+      flags,
+      nextChecks,
+      primaryRisk: "no_contract_data",
+    };
+  }
+
+  if (ctx.proxy?.isProxy) {
+    score += 20;
+    flags.push("proxy_contract");
+    nextChecks.push("verify upgrade authority and implementation control");
+  }
+
+  if (ctx.proxy?.admin) {
+    score += 10;
+    flags.push("proxy_admin_set");
+    nextChecks.push("check whether proxy admin is a multisig or EOA");
+  }
+
+  if (ctx.owner && ctx.owner !== ZeroAddress) {
+    score += 10;
+    flags.push("has_owner");
+    nextChecks.push("verify whether owner is renounced or still active");
+  }
+
+  if (ctx.paused === true) {
+    score += 25;
+    flags.push("paused_now");
+    nextChecks.push("transfers may be actively restricted");
+  }
+
+  if (ctx.bytecodeCaps?.mintFn) {
+    score += 20;
+    flags.push("mint_function_detected");
+    nextChecks.push("verify whether supply can still expand");
+  }
+
+  if (ctx.bytecodeCaps?.blacklistFn) {
+    score += 20;
+    flags.push("blacklist_pattern_detected");
+    nextChecks.push("verify whether addresses can be blocked");
+  }
+
+  if (ctx.bytecodeCaps?.pauseFn || ctx.bytecodeCaps?.pausedFn) {
+    score += 15;
+    flags.push("pause_pattern_detected");
+    nextChecks.push("verify whether transfers can be paused");
+  }
+
+  if (ctx.bytecodeCaps?.roleFn || ctx.eventSummary?.roleGrantedEvents > 0) {
+    score += 15;
+    flags.push("role_based_control_detected");
+    nextChecks.push("verify privileged role holders");
+  }
+
+  if ((ctx.eventSummary?.ownershipEvents || 0) > 0) {
+    score += 5;
+    flags.push("ownership_transfer_history");
+  }
+
+  if ((ctx.eventSummary?.pausedEvents || 0) > 0) {
+    score += 5;
+    flags.push("pause_history_seen");
+  }
+
+  score = Math.min(score, 100);
+
+  let riskLevel = "low";
+  if (score >= 60) riskLevel = "high";
+  else if (score >= 30) riskLevel = "medium";
+
+  const primaryRisk =
+    flags[0] ||
+    (riskLevel === "high"
+      ? "mutable_contract_control"
+      : riskLevel === "medium"
+        ? "privileged_contract_structure"
+        : "limited_contract_risk_signals");
+
+  return {
+    riskLevel,
+    riskScore: score,
+    flags: [...new Set(flags)],
+    nextChecks: [...new Set(nextChecks)],
+    primaryRisk,
+  };
+}
+
 async function inspectContract({ rpc, tokenAddress }) {
   const addr = getAddress(tokenAddress);
   const code = await rpc.getCode(addr);
 
-  const empty = {
-    found: false,
-    flags: [],
-    nextChecks: [],
-  };
-
   if (!code || code === "0x") {
     return {
-      ...empty,
+      found: false,
       flags: ["not_a_contract"],
+      nextChecks: [],
+      riskLevel: "unknown",
+      riskScore: 0,
+      primaryRisk: "not_a_contract",
     };
   }
 
@@ -173,7 +263,7 @@ async function inspectContract({ rpc, tokenAddress }) {
     roleGrantedEvents,
     pausedEvents,
     unpausedEvents,
-    mintEvents,
+    transferEvents,
   ] = await Promise.all([
     safeCall(rpc, target, ERC20_META_ABI, "name"),
     safeCall(rpc, target, ERC20_META_ABI, "symbol"),
@@ -192,63 +282,7 @@ async function inspectContract({ rpc, tokenAddress }) {
   const owner = ownerA || ownerB || null;
   const bytecodeCaps = summarizeBytecodeCapabilities(targetCode);
 
-  const flags = [];
-  const nextChecks = [];
-
-  if (proxy.isProxy) {
-    flags.push("proxy_contract");
-    nextChecks.push("verify proxy admin / upgrade authority");
-  }
-
-  if (owner && owner !== ZeroAddress) {
-    flags.push("has_owner");
-    nextChecks.push("verify whether owner is multisig or EOA");
-  }
-
-  if (proxy.admin) {
-    flags.push("proxy_admin_set");
-    nextChecks.push("verify whether proxy admin can replace implementation");
-  }
-
-  if (paused === true) {
-    flags.push("paused_now");
-    nextChecks.push("transfers may be restricted right now");
-  }
-
-  if (bytecodeCaps.mintFn) {
-    flags.push("mint_function_detected");
-    nextChecks.push("verify whether supply can still expand");
-  }
-
-  if (bytecodeCaps.blacklistFn) {
-    flags.push("blacklist_pattern_detected");
-    nextChecks.push("verify whether addresses can be blocked");
-  }
-
-  if (bytecodeCaps.pauseFn || bytecodeCaps.pausedFn) {
-    flags.push("pause_pattern_detected");
-    nextChecks.push("verify whether transfers can be paused");
-  }
-
-  if (bytecodeCaps.roleFn || roleGrantedEvents > 0) {
-    flags.push("role_based_control_detected");
-    nextChecks.push("verify privileged role holders");
-  }
-
-  if (ownershipEvents > 0) {
-    flags.push("ownership_transfer_history");
-  }
-
-  if (pausedEvents > 0 || unpausedEvents > 0) {
-    flags.push("pause_history_seen");
-  }
-
-  // This means mint-like activity has occurred historically, not that minting is still enabled.
-  if (mintEvents > 0) {
-    flags.push("transfer_activity_seen");
-  }
-
-  return {
+  const base = {
     found: true,
     tokenAddress: addr,
     targetAddress: target,
@@ -266,10 +300,15 @@ async function inspectContract({ rpc, tokenAddress }) {
       roleGrantedEvents,
       pausedEvents,
       unpausedEvents,
-      mintEvents,
+      transferEvents,
     },
-    flags: [...new Set(flags)],
-    nextChecks: [...new Set(nextChecks)],
+  };
+
+  const scored = scoreContractRisk(base);
+
+  return {
+    ...base,
+    ...scored,
   };
 }
 

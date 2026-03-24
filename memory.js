@@ -32,8 +32,8 @@ function loadState() {
   return loadJson(STATE_FILE, {
     globalReplyTimes: [],
     recentSignals: [],
-    lastPostTime: 0,
     postHistory: [],
+    lastThreatPostAt: 0,
   });
 }
 
