@@ -7,49 +7,66 @@ const openai = new OpenAI({
 function modeInstruction(label) {
   switch (label) {
     case "wallet_risk":
-      return "Focus on wallet behavior, approvals, suspicious interactions, counterparties, drain risk, and source of funds.";
+      return "Focus on wallet behavior, approvals, suspicious interactions, counterparties, and drain risk.";
     case "contract_risk":
-      return "Focus on owner privileges, mint rights, blacklist risk, tax or sell restrictions, admin controls, proxy risk, and verification.";
+      return "Focus on owner privileges, proxy risk, mintability, blacklist risk, pause risk, and transfer restrictions.";
     case "project_dd":
-      return "Focus on liquidity control, holder concentration, team wallets, launch structure, tokenomics, and contract controls.";
+      return "Focus on launch structure, liquidity control, holder concentration, team wallets, tokenomics, and contract controls.";
     case "scam_alert":
-      return "Focus on phishing, fake urgency, malicious links, fake support, impersonation, rugs, drains, and suspicious promotion patterns.";
+      return "Focus on phishing, impersonation, malicious links, rugs, drains, urgency traps, and suspicious promotion patterns.";
     case "security_education":
-      return "Focus on practical due diligence, scam avoidance, and verification steps.";
+      return "Focus on practical due diligence, scam avoidance, and concrete verification steps.";
     default:
       return "Focus on Web3 risk and verification.";
   }
 }
 
-async function generateReply(tweetText, label, risk, onchain) {
+function strategyInstruction(strategy) {
+  switch (strategy) {
+    case "hard_warning":
+      return "Use direct, sharp language. Lead with the strongest verified risk.";
+    case "needs_contract":
+      return "Say structure is still unverified and imply the exact contract is needed for real assessment.";
+    case "educational":
+      return "Be practical and checklist-driven.";
+    case "cautious_dd":
+    default:
+      return "Be analytical and balanced. Lead with the strongest structural uncertainty.";
+  }
+}
+
+async function generateReply(
+  tweetText,
+  label,
+  risk,
+  onchain,
+  contractCtx,
+  decision = {},
+  caseSummary = {}
+) {
   const mode = modeInstruction(label);
+  const strategy = decision?.strategy || "cautious_dd";
+  const strategyGuide = strategyInstruction(strategy);
 
   const prompt = `
-You are Fraud Agent 007, a high-trust Web3 fraud intelligence account on X.
+You are Fraud Agent 007, a sharp Web3 risk desk on X.
 
-Write one reply.
+Write one concise reply.
 
-Rules:
-- sharp
+Global rules:
+- sound like a real analyst
 - concise
-- crypto-native
 - skeptical
-- professional
-- no hype
+- crypto-native
 - no emojis
 - no hashtags
 - no slang
+- no hype
 - no financial advice
-- max 240 characters
+- no generic filler
+- do not overclaim certainty
+- max 220 characters
 - end with "$F007"
-
-Style:
-- sound like a risk desk
-- no filler
-- no generic warnings
-- identify the strongest risk first
-- say exactly what to verify next
-- use on-chain context if present, but do not overclaim certainty
 
 Mode:
 ${label}
@@ -57,29 +74,43 @@ ${label}
 Mode focus:
 ${mode}
 
-Structured risk context:
-risk_level=${risk.riskLevel}
-risk_score=${risk.score}
-red_flags=${risk.redFlags.join(", ")}
-next_checks=${risk.nextChecks.join(", ")}
+Strategy:
+${strategy}
+
+Strategy guidance:
+${strategyGuide}
+
+Risk context:
+risk_level=${risk?.riskLevel || ""}
+risk_score=${risk?.score ?? ""}
+red_flags=${(risk?.redFlags || []).join(", ")}
+next_checks=${(risk?.nextChecks || []).join(", ")}
 
 On-chain context:
-found=${onchain?.found}
-chain=${onchain?.chainId}
-token_symbol=${onchain?.tokenSymbol}
-liquidity_usd=${onchain?.liquidityUsd}
-volume_24h=${onchain?.volume24h}
-fdv=${onchain?.fdv}
-market_cap=${onchain?.marketCap}
-honeypot=${onchain?.honeypot}
-buy_tax=${onchain?.buyTax}
-sell_tax=${onchain?.sellTax}
-transfer_tax=${onchain?.transferTax}
-onchain_flags=${(onchain?.flags || []).join(", ")}
-onchain_next_checks=${(onchain?.nextChecks || []).join(", ")}
+found=${onchain?.found === true ? "true" : "false"}
+match_confidence=${onchain?.matchConfidence || "unknown"}
+flags=${(onchain?.flags || []).join(", ")}
+next_checks=${(onchain?.nextChecks || []).join(", ")}
 
-Mention and context:
+Contract context:
+found=${contractCtx?.found === true ? "true" : "false"}
+flags=${(contractCtx?.flags || []).join(", ")}
+next_checks=${(contractCtx?.nextChecks || []).join(", ")}
+
+Case memory:
+seen_before=${caseSummary?.seenBefore === true ? "true" : "false"}
+times_seen=${caseSummary?.timesSeen ?? 0}
+latest_risk_level=${caseSummary?.latestRiskLevel || ""}
+latest_primary_risk=${caseSummary?.latestPrimaryRisk || ""}
+
+Decision reason:
+${decision?.reason || ""}
+
+Mention:
 "${tweetText}"
+
+If case memory shows this entity was seen before, use that naturally only if it improves the reply.
+Write the best final reply now.
 `;
 
   const response = await openai.responses.create({
@@ -90,7 +121,19 @@ Mention and context:
   const text = (response.output_text || "").trim();
 
   if (!text) {
-    return `Main risk is ${risk.redFlags[0] || "hidden control"}. Verify ${risk.nextChecks[0] || "liquidity and permissions"} first. $F007`;
+    if (strategy === "needs_contract") {
+      return "Main risk is still unverified structure. Share the exact contract, then verify owner control, LP custody, and transfer restrictions. $F007";
+    }
+
+    if (strategy === "hard_warning") {
+      return "Main risk is mutable control, not narrative. Verify owner privileges, proxy authority, and transfer restrictions before trusting it. $F007";
+    }
+
+    if (strategy === "educational") {
+      return "Security is mostly about structure, not brand. Verify control, upgrade rights, and holder concentration before trusting any setup. $F007";
+    }
+
+    return "Main risk is unverified structure. Verify contract control, liquidity ownership, and holder concentration before trusting it. $F007";
   }
 
   return text;

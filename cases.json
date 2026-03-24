@@ -1,0 +1,60 @@
+{
+  "address:0x4f1a7d1742d005a58f58fa6837aa9b3b7cb1cda2": {
+    "key": "address:0x4f1a7d1742d005a58f58fa6837aa9b3b7cb1cda2",
+    "firstSeen": 1774311984841,
+    "lastSeen": 1774312344835,
+    "timesSeen": 6,
+    "tokenSymbol": "GROW",
+    "tokenAddress": "0x4f1a7d1742d005A58F58FA6837AA9B3B7Cb1cDa2",
+    "pattern": "token_mention",
+    "labels": {
+      "project_dd": 6
+    },
+    "latestRiskLevel": "low",
+    "latestPrimaryRisk": "buy_sell_imbalance",
+    "history": [
+      {
+        "time": 1774311984841,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312056889,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312128759,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312200831,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312272881,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      },
+      {
+        "time": 1774312344835,
+        "label": "project_dd",
+        "riskLevel": "low",
+        "primaryRisk": "buy_sell_imbalance",
+        "source": "mention"
+      }
+    ]
+  }
+}

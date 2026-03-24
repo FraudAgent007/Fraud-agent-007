@@ -18,6 +18,7 @@ function shouldReply({ tweet, classification, repliedData, state }) {
   const confidence = classification.confidence || 0;
   const authorId = String(tweet.author_id || "");
   const normalized = normalizeText(tweet.text);
+  const now = Date.now();
 
   if (label === "ignore") {
     return { allow: false, reason: "classified_ignore" };
@@ -31,17 +32,15 @@ function shouldReply({ tweet, classification, repliedData, state }) {
     return { allow: false, reason: "duplicate_text" };
   }
 
-  const now = Date.now();
-
-  // hard per-user cooldown: 6 hours
+  // TEMP TEST MODE: 5 min per-user cooldown
   const lastUserReply = repliedData.authorCooldowns?.[authorId] || 0;
-  if (now - lastUserReply < 6 * 60 * 60 * 1000) {
+  if (now - lastUserReply < 5 * 60 * 1000) {
     return { allow: false, reason: "author_cooldown" };
   }
 
-  // hard global cooldown: 15 minutes
+  // Global cooldown: 2 min between replies
   const recentGlobalReplies = (state.globalReplyTimes || []).filter(
-    (ts) => now - ts < 15 * 60 * 1000
+    (ts) => now - ts < 2 * 60 * 1000
   );
   if (recentGlobalReplies.length >= 1) {
     return { allow: false, reason: "global_rate_limit" };
@@ -53,13 +52,13 @@ function shouldReply({ tweet, classification, repliedData, state }) {
     label === "wallet_risk" ||
     label === "project_dd"
   ) {
-    if (confidence >= 0.88) {
+    if (confidence >= 0.82) {
       return { allow: true, reason: "high_value_signal" };
     }
     return { allow: false, reason: "confidence_too_low" };
   }
 
-  if (label === "security_education" && confidence >= 0.9) {
+  if (label === "security_education" && confidence >= 0.88) {
     return { allow: true, reason: "education_allowed" };
   }
 

@@ -24,7 +24,7 @@ function extractTickers(text) {
   return [...new Set(matches.map((t) => t.replace("$", "").toUpperCase()))];
 }
 
-const MAJOR_TOKENS = ["BTC", "ETH", "BNB", "SOL"];
+const MAJOR_TOKENS = ["BTC", "ETH", "BNB", "SOL", "USDT", "USDC"];
 
 function isMajorToken(symbol) {
   return MAJOR_TOKENS.includes((symbol || "").toUpperCase());
@@ -36,29 +36,63 @@ async function searchDexPairs(query) {
   return data?.pairs || [];
 }
 
-function scorePair(pair) {
+function scorePair(pair, requestedTicker) {
   const liquidity = Number(pair?.liquidity?.usd || 0);
   const volume = Number(pair?.volume?.h24 || 0);
   const buys = Number(pair?.txns?.h24?.buys || 0);
   const sells = Number(pair?.txns?.h24?.sells || 0);
 
-  return liquidity * 0.6 + volume * 0.3 + (buys + sells) * 10;
+  let score = liquidity * 0.6 + volume * 0.3 + (buys + sells) * 10;
+
+  const base = (pair?.baseToken?.symbol || "").toUpperCase();
+  const quote = (pair?.quoteToken?.symbol || "").toUpperCase();
+
+  if (requestedTicker) {
+    if (base === requestedTicker) score += 500000;
+    if (quote === requestedTicker) score += 100000;
+  }
+
+  return score;
 }
 
-function pickBestPair(pairs) {
+function pickBestPair(pairs, requestedTicker) {
   if (!Array.isArray(pairs) || !pairs.length) return null;
 
-  return [...pairs].sort((a, b) => scorePair(b) - scorePair(a))[0];
+  return [...pairs].sort((a, b) => {
+    return scorePair(b, requestedTicker) - scorePair(a, requestedTicker);
+  })[0];
+}
+
+function getMatchConfidence(pair, requestedTicker) {
+  if (!pair || !requestedTicker) return "unknown";
+
+  const base = (pair?.baseToken?.symbol || "").toUpperCase();
+  const quote = (pair?.quoteToken?.symbol || "").toUpperCase();
+  const liquidity = Number(pair?.liquidity?.usd || 0);
+  const volume = Number(pair?.volume?.h24 || 0);
+
+  if (base === requestedTicker && liquidity >= 100000 && volume >= 1000) {
+    return "high";
+  }
+
+  if (base === requestedTicker && liquidity >= 25000) {
+    return "medium";
+  }
+
+  if (quote === requestedTicker && liquidity >= 25000) {
+    return "low";
+  }
+
+  return "low";
 }
 
 async function getDexContextFromText(text) {
   const address = extractAddress(text);
   const tickers = extractTickers(text);
 
-  // 1. Address mention = strongest signal
   if (address) {
     const pairs = await searchDexPairs(address);
-    const bestPair = pickBestPair(pairs);
+    const bestPair = pickBestPair(pairs, null);
 
     if (!bestPair) return null;
 
@@ -68,31 +102,31 @@ async function getDexContextFromText(text) {
       token: bestPair.baseToken?.symbol || null,
       bestPair,
       pairs,
+      matchConfidence: "high",
     };
   }
 
-  // 2. Multiple tickers = comparison / broad context, skip direct lookup
   if (tickers.length > 1) {
     return {
       type: "multi_token",
       tokens: tickers,
+      matchConfidence: "none",
     };
   }
 
-  // 3. Single ticker
   if (tickers.length === 1) {
     const token = tickers[0];
 
-    // skip majors to avoid weird wrapped/bridged pair matches
     if (isMajorToken(token)) {
       return {
         type: "major_token",
         token,
+        matchConfidence: "none",
       };
     }
 
     const pairs = await searchDexPairs(token);
-    const bestPair = pickBestPair(pairs);
+    const bestPair = pickBestPair(pairs, token);
 
     if (!bestPair) return null;
 
@@ -101,6 +135,7 @@ async function getDexContextFromText(text) {
       token,
       bestPair,
       pairs,
+      matchConfidence: getMatchConfidence(bestPair, token),
     };
   }
 
@@ -137,6 +172,7 @@ async function getHoneypotContext(chainId, tokenAddress) {
 function summarizeOnchain(dexContext, honeypotContext) {
   const summary = {
     found: false,
+    matchConfidence: dexContext?.matchConfidence || "unknown",
     chainId: null,
     dexId: null,
     tokenAddress: null,
@@ -182,6 +218,11 @@ function summarizeOnchain(dexContext, honeypotContext) {
     : null;
   summary.buys24h = pair.txns?.h24?.buys ?? null;
   summary.sells24h = pair.txns?.h24?.sells ?? null;
+
+  if (summary.matchConfidence === "low") {
+    summary.flags.push("weak_token_match");
+    summary.nextChecks.push("verify that the resolved pair is the intended token");
+  }
 
   if ((summary.liquidityUsd ?? 0) < 25000) {
     summary.flags.push("low_liquidity");
