@@ -14,46 +14,24 @@ function summarizeEvidence({
   const gaps = [];
   const concerns = [];
 
-  if (classification?.label) {
-    facts.push(`label:${classification.label}`);
-  }
-
-  if (risk?.riskLevel) {
-    facts.push(`risk:${risk.riskLevel}`);
-  }
-
-  if (typeof risk?.score === "number") {
-    facts.push(`risk_score:${risk.score}`);
-  }
+  if (classification?.label) facts.push(`label:${classification.label}`);
+  if (risk?.riskLevel) facts.push(`risk:${risk.riskLevel}`);
+  if (typeof risk?.score === "number") facts.push(`risk_score:${risk.score}`);
 
   if (onchain?.found) {
     facts.push(`resolved:${onchain.tokenSymbol || onchain.tokenAddress || "token"}`);
-
     if (onchain.chainId) facts.push(`chain:${onchain.chainId}`);
     if (onchain.dexId) facts.push(`dex:${onchain.dexId}`);
-
     if (Number(onchain.liquidityUsd || 0) > 0) {
       facts.push(`liquidity_usd:${Math.round(Number(onchain.liquidityUsd))}`);
-    }
-
-    if (Number(onchain.volume24h || 0) > 0) {
-      facts.push(`volume24h:${Math.round(Number(onchain.volume24h))}`);
     }
   } else {
     gaps.push("token_not_resolved");
   }
 
-  for (const flag of contractCtx?.flags || []) {
-    concerns.push(flag);
-  }
-
-  for (const flag of holderCtx?.flags || []) {
-    concerns.push(flag);
-  }
-
-  for (const flag of risk?.redFlags || []) {
-    concerns.push(flag);
-  }
+  for (const flag of contractCtx?.flags || []) concerns.push(flag);
+  for (const flag of holderCtx?.flags || []) concerns.push(flag);
+  for (const flag of risk?.redFlags || []) concerns.push(flag);
 
   if (!contractCtx?.found && classification?.label !== "security_education") {
     gaps.push("contract_not_verified");
@@ -63,22 +41,8 @@ function summarizeEvidence({
     gaps.push("holder_distribution_missing");
   }
 
-  if (holderCtx?.found) {
-    if (typeof holderCtx.top1Pct === "number") facts.push(`top1_pct:${holderCtx.top1Pct}`);
-    if (typeof holderCtx.top5Pct === "number") facts.push(`top5_pct:${holderCtx.top5Pct}`);
-    if (typeof holderCtx.top10Pct === "number") facts.push(`top10_pct:${holderCtx.top10Pct}`);
-    if (typeof holderCtx.hhi === "number") facts.push(`hhi:${holderCtx.hhi}`);
-    if (typeof holderCtx.holdersConsidered === "number") {
-      facts.push(`holders_considered:${holderCtx.holdersConsidered}`);
-    }
-  }
-
   if ((caseSummary?.timesSeen || 0) >= 2) {
     facts.push(`seen:${caseSummary.timesSeen}`);
-  }
-
-  if (typeof caseSummary?.avgRiskScore === "number") {
-    facts.push(`avg_case_risk:${Number(caseSummary.avgRiskScore.toFixed(1))}`);
   }
 
   return {
@@ -157,17 +121,6 @@ function scoreReasoning({
     reasons.push("thin liquidity");
   }
 
-  if (Number(onchain?.liquidityUsd || 0) > 0 && Number(onchain.liquidityUsd) < 2500) {
-    score += 8;
-    posture = "warning";
-    reasons.push("very low liquidity");
-  }
-
-  if (Number(onchain?.volume24h || 0) > 0 && Number(onchain.volume24h) < 1000) {
-    score += 6;
-    reasons.push("weak volume");
-  }
-
   if (contractFlags.includes("proxy_contract")) {
     score += 18;
     posture = "warning";
@@ -206,6 +159,35 @@ function scoreReasoning({
     reasons.push("pause capability");
   }
 
+  if (contractFlags.includes("sol_mint_authority_present")) {
+    score += 20;
+    posture = "warning";
+    reasons.push("mint authority still present");
+  }
+
+  if (contractFlags.includes("sol_freeze_authority_present")) {
+    score += 28;
+    posture = "warning";
+    reasons.push("freeze authority still present");
+  }
+
+  if (contractFlags.includes("sol_single_holder_heavy")) {
+    score += 12;
+    reasons.push("single token account concentration");
+  }
+
+  if (contractFlags.includes("sol_top5_dominance")) {
+    score += 20;
+    posture = "warning";
+    reasons.push("top 5 token account concentration");
+  }
+
+  if (contractFlags.includes("sol_extreme_top10_concentration")) {
+    score += 24;
+    posture = "warning";
+    reasons.push("extreme token account concentration");
+  }
+
   if (holderFlags.includes("single_holder_heavy")) {
     score += 12;
     reasons.push("single wallet concentration");
@@ -232,17 +214,6 @@ function scoreReasoning({
   if (holderFlags.includes("holder_cluster_risk")) {
     score += 10;
     reasons.push("holder distribution may be coordinated");
-  }
-
-  if (typeof holderCtx?.riskScore === "number") {
-    if (holderCtx.riskScore >= 55) {
-      score += 12;
-      posture = "warning";
-      reasons.push("high holder risk score");
-    } else if (holderCtx.riskScore >= 28) {
-      score += 6;
-      reasons.push("moderate holder risk score");
-    }
   }
 
   if ((caseSummary?.timesSeen || 0) >= 2) {

@@ -126,8 +126,8 @@
   "pattern:external_link": {
     "key": "pattern:external_link",
     "firstSeen": 1774355876859,
-    "lastSeen": 1774387780110,
-    "timesSeen": 6,
+    "lastSeen": 1774434783982,
+    "timesSeen": 7,
     "tokenSymbol": null,
     "tokenAddress": null,
     "pattern": "external_link",
@@ -177,10 +177,16 @@
         "riskScore": 55,
         "riskLevel": "medium",
         "primaryRisk": "phishing or malicious link structure"
+      },
+      {
+        "time": 1774434783982,
+        "riskScore": 55,
+        "riskLevel": "medium",
+        "primaryRisk": "phishing or malicious link structure"
       }
     ],
     "lastRiskScore": 55,
-    "avgRiskScore": 9.166666666666666
+    "avgRiskScore": 15.714285714285714
   },
   "pattern:urgency_link": {
     "key": "pattern:urgency_link",

@@ -20,6 +20,8 @@ function dexChainToRpcKey(chainId) {
       return "BASE_RPC_URLS";
     case "arbitrum":
       return "ARBITRUM_RPC_URLS";
+    case "solana":
+      return "SOLANA_RPC_URLS";
     default:
       return null;
   }

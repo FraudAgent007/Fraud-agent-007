@@ -28,6 +28,7 @@ const {
 } = require("./onchain");
 const { RpcPool } = require("./rpcClient");
 const { inspectContract } = require("./contractLayer");
+const { inspectSolanaMint } = require("./solanaLayer");
 const { getTopHolders } = require("./holderProvider");
 const { analyzeHolderRisk } = require("./holderLayer");
 const { buildReasoningBrain } = require("./reasoningBrain");
@@ -101,7 +102,7 @@ let isThreatPosting = false;
 
 function buildRpcPoolForChain(chainId) {
   const key = dexChainToRpcKey(chainId);
-  if (!key) return null;
+  if (!key || key === "SOLANA_RPC_URLS") return null;
 
   const urls = (process.env[key] || "")
     .split(",")
@@ -110,6 +111,13 @@ function buildRpcPoolForChain(chainId) {
 
   if (!urls.length) return null;
   return new RpcPool(urls);
+}
+
+function getSolanaRpcUrl() {
+  return (process.env.SOLANA_RPC_URLS || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)[0] || null;
 }
 
 async function processMentions() {
@@ -189,51 +197,66 @@ async function processMentions() {
       onchain = summarizeOnchain(dexContext);
 
       if (onchain.found && onchain.chainId && onchain.tokenAddress) {
-        const rpc = buildRpcPoolForChain(onchain.chainId);
+        if ((onchain.chainId || "").toLowerCase() === "solana") {
+          const solanaRpcUrl = getSolanaRpcUrl();
 
-        if (rpc) {
-          try {
-            contractCtx = await inspectContract({
-              rpc,
-              tokenAddress: onchain.tokenAddress
-            });
-          } catch (err) {
-            console.error("Contract error:", err.message || err);
+          if (solanaRpcUrl) {
+            try {
+              contractCtx = await inspectSolanaMint({
+                rpcUrl: solanaRpcUrl,
+                mintAddress: onchain.tokenAddress
+              });
+            } catch (err) {
+              console.error("Solana layer error:", err.message || err);
+            }
           }
-        }
+        } else {
+          const rpc = buildRpcPoolForChain(onchain.chainId);
 
-        try {
-          const rawHolders = await getTopHolders({
-            chainId: onchain.chainId,
-            tokenAddress: onchain.tokenAddress,
-            limit: 20
-          });
+          if (rpc) {
+            try {
+              contractCtx = await inspectContract({
+                rpc,
+                tokenAddress: onchain.tokenAddress
+              });
+            } catch (err) {
+              console.error("Contract error:", err.message || err);
+            }
+          }
 
-          if (rawHolders.found) {
-            holderCtx = analyzeHolderRisk({
-              holders: rawHolders.holders || [],
-              totalSupply: contractCtx.totalSupply || null
+          try {
+            const rawHolders = await getTopHolders({
+              chainId: onchain.chainId,
+              tokenAddress: onchain.tokenAddress,
+              limit: 20
             });
 
-            holderCtx.source = rawHolders.source || null;
-            holderCtx.providerReason = rawHolders.reason || null;
-          } else {
+            if (rawHolders.found) {
+              holderCtx = analyzeHolderRisk({
+                holders: rawHolders.holders || [],
+                totalSupply: contractCtx.totalSupply || null
+              });
+
+              holderCtx.source = rawHolders.source || null;
+              holderCtx.providerReason = rawHolders.reason || null;
+            } else {
+              holderCtx = {
+                found: false,
+                flags: [],
+                nextChecks: [],
+                reason: rawHolders.reason || "holder_provider_unavailable",
+                source: rawHolders.source || null
+              };
+            }
+          } catch (err) {
+            console.error("Holder error:", err.message || err);
             holderCtx = {
               found: false,
               flags: [],
               nextChecks: [],
-              reason: rawHolders.reason || "holder_provider_unavailable",
-              source: rawHolders.source || null
+              reason: err.message || "holder_fetch_exception"
             };
           }
-        } catch (err) {
-          console.error("Holder error:", err.message || err);
-          holderCtx = {
-            found: false,
-            flags: [],
-            nextChecks: [],
-            reason: err.message || "holder_fetch_exception"
-          };
         }
       }
 
